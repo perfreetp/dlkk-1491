@@ -221,7 +221,7 @@ export const mockExaminations: Examination[] = Array.from({ length: 35 }, (_, i)
            55 + Math.floor(Math.random() * 25),
     defects,
     needRetake,
-    retakeType: needRetake ? (Math.random() > 0.4 ? "operation" : "equipment") : undefined,
+    retakeType: needRetake ? (Math.random() > 0.4 ? "operation" : "equipment") as "operation" | "equipment" : undefined,
     retakeReason: needRetake ? (Math.random() > 0.4 ? "体位不标准，需要重新拍摄" : "设备伪影影响诊断") : undefined,
     recheckRequested: status === "rechecking" || Math.random() > 0.85,
     recheckOpinion: status === "completed" ? "图像质量可接受，同意诊断报告" : undefined,

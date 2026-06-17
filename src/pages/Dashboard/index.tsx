@@ -68,9 +68,10 @@ export default function Dashboard() {
         status: e.status,
         statusText: getStatusText(e.status),
         statusColor: getStatusColor(e.status),
+        responsible: e.technician,
       })),
     ...examinations
-      .filter((e) => e.status === "rechecking")
+      .filter((e) => e.status === "rechecking" || e.recheckRequested)
       .slice(0, 2)
       .map((e) => ({
         type: "recheck" as const,
@@ -78,8 +79,9 @@ export default function Dashboard() {
         title: `复核中 - ${e.patientName}`,
         time: e.examTime,
         status: e.status,
-        statusText: getStatusText(e.status),
-        statusColor: getStatusColor(e.status),
+        statusText: "待复核",
+        statusColor: "warning",
+        responsible: e.technician,
       })),
     ...rectificationTasks
       .filter((t) => t.status !== "completed")
@@ -95,6 +97,7 @@ export default function Dashboard() {
           statusText: isOverdue ? "已逾期" : getRectificationStatusText(t.status),
           statusColor: isOverdue ? "error" : getRectificationStatusColor(t.status),
           isOverdue,
+          responsible: t.responsible,
         };
       }),
   ].slice(0, 6);
@@ -327,23 +330,32 @@ export default function Dashboard() {
                     }
                   }}
                 >
-                  <div className="flex items-center justify-between w-full py-1">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle
-                        size={14}
-                        className={
-                          item.type === "rectification"
-                            ? item.isOverdue
-                              ? "text-medical-red"
-                              : "text-medical-orange"
-                            : "text-medical-blue"
-                        }
-                      />
-                      <span className="text-sm text-gray-700">{item.title}</span>
+                  <div className="flex items-center justify-between w-full py-1.5">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle
+                          size={14}
+                          className={
+                            item.type === "rectification"
+                              ? item.isOverdue
+                                ? "text-medical-red"
+                                : "text-medical-orange"
+                              : "text-medical-blue"
+                          }
+                        />
+                        <span className="text-sm text-gray-700 font-medium truncate">
+                          {item.title}
+                        </span>
+                      </div>
+                      {item.responsible && (
+                        <div className="text-xs text-gray-400 mt-1 pl-6">
+                          责任人：{item.responsible}
+                        </div>
+                      )}
                     </div>
                     <Tag
                       color={item.statusColor as any}
-                      style={{ margin: 0 }}
+                      style={{ margin: 0, flexShrink: 0 }}
                     >
                       {item.statusText}
                     </Tag>

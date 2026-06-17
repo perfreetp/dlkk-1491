@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import dayjs from "dayjs";
 import type {
   Examination,
   DefectType,
@@ -112,6 +113,7 @@ interface QCStore {
   updateRoom: (id: string, data: Partial<Room>) => void;
   updatePositionRules: (rules: Partial<PositionRules>) => void;
   processRecheck: (examId: string, result: "passed" | "retake" | "supplement", remark: string, processor: string) => void;
+  addRecheckHistory: (examId: string, item: Omit<import("@/types").RecheckHistoryItem, "id">) => void;
 }
 
 export const useQCStore = create<QCStore>()(
@@ -240,6 +242,19 @@ export const useQCStore = create<QCStore>()(
             newStatus = "qc_pending";
           }
 
+          const historyItem: import("@/types").RecheckHistoryItem = {
+            id: `rh-${Date.now()}`,
+            action: "process",
+            operator: processor,
+            operatorRole: "科主任",
+            time: dayjs().format("YYYY-MM-DD HH:mm"),
+            remark,
+            result,
+            score: exam.score,
+          };
+
+          const existingHistory = exam.recheckHistory || [];
+
           return {
             examinations: state.examinations.map((e) =>
               e.id === examId
@@ -249,11 +264,29 @@ export const useQCStore = create<QCStore>()(
                     recheckResult: result,
                     recheckRemark: remark,
                     rechecker: processor,
-                    recheckTime: new Date().toISOString().split("T")[0],
+                    recheckTime: dayjs().format("YYYY-MM-DD HH:mm"),
                     recheckRequested: false,
+                    recheckHistory: [...existingHistory, historyItem],
                   }
                 : e
             ),
+          };
+        }),
+
+      addRecheckHistory: (examId, item) =>
+        set((state) => {
+          return {
+            examinations: state.examinations.map((e) => {
+              if (e.id !== examId) return e;
+              const newItem: import("@/types").RecheckHistoryItem = {
+                ...item,
+                id: `rh-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              };
+              return {
+                ...e,
+                recheckHistory: [...(e.recheckHistory || []), newItem],
+              };
+            }),
           };
         }),
     }),

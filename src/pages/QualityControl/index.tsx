@@ -20,6 +20,7 @@ import {
   Badge,
   Tooltip,
   Collapse,
+  Timeline,
 } from "antd";
 import {
   CheckCircle2,
@@ -39,14 +40,29 @@ import {
   RefreshCw,
   Info,
   Settings,
+  History,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQCStore, getStatusText, getStatusColor, getDefectName } from "@/store";
-import type { Examination, DefectType } from "@/types";
+import type { Examination, DefectType, RecheckHistoryItem } from "@/types";
+import dayjs from "dayjs";
 
 const { TextArea } = Input;
 const { Option } = Select;
 const { Step } = Steps;
+
+const actionTypeMap: Record<string, { text: string; color: string; icon: any }> = {
+  request: { text: "发起复核", color: "blue", icon: Send },
+  process: { text: "复核处理", color: "green", icon: CheckCircle2 },
+  re_submit: { text: "重新提交", color: "orange", icon: RefreshCw },
+  final_pass: { text: "最终通过", color: "green", icon: CheckCircle2 },
+};
+
+const resultTypeMap: Record<string, { text: string; color: string }> = {
+  passed: { text: "复核通过", color: "success" },
+  retake: { text: "退回重拍", color: "error" },
+  supplement: { text: "需补充说明", color: "warning" },
+};
 
 export default function QualityControl() {
   const navigate = useNavigate();
@@ -59,6 +75,7 @@ export default function QualityControl() {
     updateExamination,
     getExamById,
     currentUser,
+    addRecheckHistory,
   } = useQCStore();
 
   const [currentExam, setCurrentExam] = useState<Examination | null>(null);
@@ -209,6 +226,29 @@ export default function QualityControl() {
       recheckTime: currentExam.recheckTime,
       remark,
     });
+
+    if (submitType === "recheck" || (submitType === "pass" && finalRecheckRequested)) {
+      const isReSubmit = currentExam.recheckResult && currentExam.recheckResult !== "passed";
+      addRecheckHistory(currentExam.id, {
+        action: isReSubmit ? "re_submit" : "request",
+        operator: currentUser.name,
+        operatorRole: currentUser.roleName,
+        time: dayjs().format("YYYY-MM-DD HH:mm"),
+        remark: finalRecheckOpinion || "发起复核",
+        score: totalScore,
+      });
+    }
+
+    if (submitType === "pass" && !finalRecheckRequested && currentExam.recheckResult === "supplement") {
+      addRecheckHistory(currentExam.id, {
+        action: "re_submit",
+        operator: currentUser.name,
+        operatorRole: currentUser.roleName,
+        time: dayjs().format("YYYY-MM-DD HH:mm"),
+        remark: "补充说明后重新提交质控",
+        score: totalScore,
+      });
+    }
 
     message.success(
       submitType === "pass"
@@ -481,6 +521,105 @@ export default function QualityControl() {
           />
         );
       })()}
+
+      {currentExam && currentExam.recheckHistory && currentExam.recheckHistory.length > 0 && (
+        <Collapse
+          size="small"
+          ghost
+          defaultActiveKey={["recheck-history"]}
+          items={[
+            {
+              key: "recheck-history",
+              label: (
+                <div className="flex items-center gap-2">
+                  <History size={16} className="text-medical-blue" />
+                  <span className="font-medium">复核历史记录</span>
+                  <Badge
+                    count={currentExam.recheckHistory.length}
+                    style={{ backgroundColor: "#1890ff" }}
+                  />
+                </div>
+              ),
+              children: (
+                <div className="pl-6">
+                  {(() => {
+                    const history = currentExam.recheckHistory || [];
+                    const sortedHistory = [...history].sort(
+                      (a, b) =>
+                        new Date(a.time).getTime() - new Date(b.time).getTime()
+                    );
+
+                    return (
+                      <Timeline
+                        items={sortedHistory.map((item) => {
+                          const config = actionTypeMap[item.action] || {
+                            text: item.action,
+                            color: "blue",
+                            icon: History,
+                          };
+                          const Icon = config.icon;
+                          let color = "blue";
+                          if (item.result === "passed") color = "green";
+                          if (item.result === "retake") color = "red";
+                          if (item.result === "supplement") color = "orange";
+
+                          return {
+                            color: color as any,
+                            dot: <Icon size={16} />,
+                            children: (
+                              <div className="pb-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-medium text-gray-800">
+                                    {config.text}
+                                  </span>
+                                  {item.result && (
+                                    <Tag
+                                      color={
+                                        resultTypeMap[item.result]?.color ||
+                                        "default"
+                                      }
+                                      style={{ margin: 0 }}
+                                    >
+                                      {resultTypeMap[item.result]?.text ||
+                                        item.result}
+                                    </Tag>
+                                  )}
+                                </div>
+                                <div className="text-sm text-gray-600">
+                                  操作人：{item.operator}
+                                  {item.operatorRole &&
+                                    `（${item.operatorRole}）`}
+                                </div>
+                                {item.score !== undefined && (
+                                  <div className="text-sm text-gray-600">
+                                    当时评分：
+                                    <span className="font-medium text-medical-blue">
+                                      {item.score}分
+                                    </span>
+                                  </div>
+                                )}
+                                {item.remark && (
+                                  <div className="text-sm text-gray-600 mt-1 bg-gray-50 p-2 rounded">
+                                    {item.remark}
+                                  </div>
+                                )}
+                                <div className="text-xs text-gray-400 mt-1">
+                                  {item.time}
+                                </div>
+                              </div>
+                            ),
+                          };
+                        })}
+                      />
+                    );
+                  })()}
+                </div>
+              ),
+            },
+          ]}
+          className="border border-blue-200 rounded-lg bg-blue-50/30 overflow-hidden"
+        />
+      )}
 
       <Steps
         current={currentStep}

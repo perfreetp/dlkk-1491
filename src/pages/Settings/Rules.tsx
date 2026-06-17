@@ -66,32 +66,57 @@ export default function SettingsRules() {
   const getAffectedExams = useMemo(() => {
     if (!previewRuleKey) return [];
     
-    return examinations.filter((exam: Examination) => {
+    const results: { exam: Examination; missingInfo: string[] }[] = [];
+    
+    examinations.forEach((exam: Examination) => {
       const bodyParts = exam.bodyParts || [];
       const markers = exam.markers || { left: false, right: false };
+      const missing: string[] = [];
       
       switch (previewRuleKey) {
         case "ccLeftRequired":
-          return !bodyParts.includes("CC-L");
+          if (!bodyParts.includes("CC-L")) missing.push("CC左");
+          break;
         case "ccRightRequired":
-          return !bodyParts.includes("CC-R");
+          if (!bodyParts.includes("CC-R")) missing.push("CC右");
+          break;
         case "mloLeftRequired":
-          return !bodyParts.includes("MLO-L");
+          if (!bodyParts.includes("MLO-L")) missing.push("MLO左");
+          break;
         case "mloRightRequired":
-          return !bodyParts.includes("MLO-R");
+          if (!bodyParts.includes("MLO-R")) missing.push("MLO右");
+          break;
         case "leftMarkerRequired":
-          return !markers.left;
+          if (!markers.left) missing.push("L标识");
+          break;
         case "rightMarkerRequired":
-          return !markers.right;
+          if (!markers.right) missing.push("R标识");
+          break;
         case "ccMloPairRequired": {
-          const hasCC = bodyParts.includes("CC-L") || bodyParts.includes("CC-R");
-          const hasMLO = bodyParts.includes("MLO-L") || bodyParts.includes("MLO-R");
-          return !hasCC || !hasMLO;
+          const hasCCLeft = bodyParts.includes("CC-L");
+          const hasCCRight = bodyParts.includes("CC-R");
+          const hasMLOLeft = bodyParts.includes("MLO-L");
+          const hasMLORight = bodyParts.includes("MLO-R");
+          
+          if (hasCCLeft && !hasMLOLeft) missing.push("左侧：缺MLO");
+          if (!hasCCLeft && hasMLOLeft) missing.push("左侧：缺CC");
+          if (!hasCCLeft && !hasMLOLeft) missing.push("左侧：CC和MLO都缺");
+          
+          if (hasCCRight && !hasMLORight) missing.push("右侧：缺MLO");
+          if (!hasCCRight && hasMLORight) missing.push("右侧：缺CC");
+          if (!hasCCRight && !hasMLORight) missing.push("右侧：CC和MLO都缺");
+          break;
         }
         default:
-          return false;
+          break;
+      }
+      
+      if (missing.length > 0) {
+        results.push({ exam, missingInfo: missing });
       }
     });
+    
+    return results;
   }, [previewRuleKey, examinations]);
 
   const handlePositionRuleChange = (key: keyof typeof positionRules, value: boolean) => {
@@ -623,37 +648,34 @@ export default function SettingsRules() {
                 <div className="max-h-80 overflow-y-auto border rounded-lg">
                   <List
                     dataSource={getAffectedExams.slice(0, 20)}
-                    renderItem={(exam: Examination) => (
+                    renderItem={(item: { exam: Examination; missingInfo: string[] }) => (
                       <List.Item className="px-4 py-3 hover:bg-gray-50 border-b last:border-b-0">
                         <div className="flex items-center justify-between w-full">
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-medical-blue/10 flex items-center justify-center text-medical-blue font-medium text-sm">
-                              {exam.patientName.charAt(0)}
+                              {item.exam.patientName.charAt(0)}
                             </div>
                             <div>
                               <p className="font-medium text-gray-800 text-sm">
-                                {exam.patientName}
+                                {item.exam.patientName}
                               </p>
                               <p className="text-xs text-gray-500">
-                                {exam.patientId} · {exam.examTime}
+                                {item.exam.patientId} · {item.exam.examTime}
                               </p>
                             </div>
                           </div>
                           <div className="text-right">
-                            <Tag color="warning" style={{ fontSize: 12 }}>
-                              缺失{(() => {
-                                switch (previewRuleKey) {
-                                  case "ccLeftRequired": return "CC左";
-                                  case "ccRightRequired": return "CC右";
-                                  case "mloLeftRequired": return "MLO左";
-                                  case "mloRightRequired": return "MLO右";
-                                  case "leftMarkerRequired": return "L标识";
-                                  case "rightMarkerRequired": return "R标识";
-                                  case "ccMloPairRequired": return "体位成套";
-                                  default: return "";
-                                }
-                              })()}
-                            </Tag>
+                            <div className="flex flex-col gap-1 items-end">
+                              {item.missingInfo.map((info, idx) => (
+                                <Tag
+                                  key={idx}
+                                  color="warning"
+                                  style={{ fontSize: 12, margin: 0 }}
+                                >
+                                  {info}
+                                </Tag>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       </List.Item>

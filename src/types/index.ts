@@ -16,6 +16,19 @@ export interface Positions {
 
 export type RecheckResult = "passed" | "retake" | "supplement";
 
+export type RecheckActionType = "request" | "process" | "re_submit" | "final_pass";
+
+export interface RecheckHistoryItem {
+  id: string;
+  action: RecheckActionType;
+  operator: string;
+  operatorRole?: string;
+  time: string;
+  remark?: string;
+  result?: RecheckResult;
+  score?: number;
+}
+
 export interface Examination {
   id: string;
   patientId: string;
@@ -47,6 +60,7 @@ export interface Examination {
   recheckResult?: RecheckResult;
   recheckRemark?: string;
   recheckTime?: string;
+  recheckHistory?: RecheckHistoryItem[];
   remark?: string;
 }
 

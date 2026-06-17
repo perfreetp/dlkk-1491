@@ -230,42 +230,69 @@ export default function Queue() {
     {
       title: "复核信息",
       key: "recheck",
-      width: 220,
+      width: 240,
       render: (_, record) => {
-        if (!record.recheckRequested) {
+        const hasRecheckInfo =
+          record.recheckRequested ||
+          record.recheckResult ||
+          (record.recheckHistory && record.recheckHistory.length > 0);
+        
+        if (!hasRecheckInfo) {
           return <span className="text-gray-400 text-sm">-</span>;
         }
+
+        const getResultText = (result?: string) => {
+          switch (result) {
+            case "passed": return "复核通过";
+            case "retake": return "退回重拍";
+            case "supplement": return "需补充说明";
+            default: return "";
+          }
+        };
+
+        const getResultColor = (result?: string) => {
+          switch (result) {
+            case "passed": return "success";
+            case "retake": return "error";
+            case "supplement": return "warning";
+            default: return "default";
+          }
+        };
+
+        const latestResult = record.recheckResult;
+        const latestRemark = record.recheckRemark;
+        const latestTime = record.recheckTime;
+        const latestHandler = record.rechecker;
+
         return (
-          <div className="text-xs">
-            {record.rechecker && (
-              <div className="flex items-center gap-1 mb-1">
-                <span className="text-gray-500">复核人：</span>
-                <span className="font-medium text-gray-700">{record.rechecker}</span>
-              </div>
-            )}
-            {record.recheckOpinion && (
-              <div className="text-gray-500 line-clamp-2" title={record.recheckOpinion}>
-                {record.recheckOpinion}
-              </div>
-            )}
-            {record.recheckResult && (
-              <Tag
-                color={
-                  record.recheckResult === "passed"
-                    ? "success"
-                    : record.recheckResult === "retake"
-                    ? "error"
-                    : "warning"
-                }
-                className="mt-1"
-                style={{ margin: 0 }}
-              >
-                {record.recheckResult === "passed"
-                  ? "复核通过"
-                  : record.recheckResult === "retake"
-                  ? "退回重拍"
-                  : "需补充说明"}
+          <div className="text-xs space-y-1">
+            {record.recheckRequested && !record.recheckResult && (
+              <Tag color="warning" style={{ margin: 0 }}>
+                待复核
               </Tag>
+            )}
+            {latestResult && (
+              <div>
+                <Tag color={getResultColor(latestResult)} style={{ margin: 0 }}>
+                  {getResultText(latestResult)}
+                </Tag>
+              </div>
+            )}
+            {latestHandler && (
+              <div className="flex items-center gap-1">
+                <span className="text-gray-500">处理人：</span>
+                <span className="font-medium text-gray-700">{latestHandler}</span>
+              </div>
+            )}
+            {latestRemark && (
+              <div className="text-gray-500 line-clamp-2" title={latestRemark}>
+                {latestRemark}
+              </div>
+            )}
+            {latestTime && (
+              <div className="text-gray-400 text-[11px]">
+                {latestTime}
+              </div>
             )}
           </div>
         );
