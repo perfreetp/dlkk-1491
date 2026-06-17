@@ -19,6 +19,7 @@ import {
   Descriptions,
   Badge,
   Tooltip,
+  Collapse,
 } from "antd";
 import {
   CheckCircle2,
@@ -35,6 +36,9 @@ import {
   MapPin,
   Clock,
   BookOpen,
+  RefreshCw,
+  Info,
+  Settings,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQCStore, getStatusText, getStatusColor, getDefectName } from "@/store";
@@ -81,16 +85,19 @@ export default function QualityControl() {
         if (exam.retakeType) setRetakeType(exam.retakeType);
         if (exam.retakeReason) setRetakeReason(exam.retakeReason);
         setRecheckRequested(exam.recheckRequested);
+        if (exam.rechecker) setRechecker(exam.rechecker);
         if (exam.recheckOpinion) setRecheckOpinion(exam.recheckOpinion);
         if (exam.remark) setRemark(exam.remark);
 
-        if (exam.score > 0) {
+        const hasExistingScore = exam.score > 0 || exam.originalScore !== undefined;
+        if (hasExistingScore) {
+          const baseScore = exam.originalScore ?? exam.score;
           const totalMax = scoreItems.reduce((sum, item) => sum + item.maxScore, 0);
-          const perItem = Math.floor(exam.score / scoreItems.length);
+          const perItem = Math.floor(baseScore / scoreItems.length);
           const scoreMap: Record<string, number> = {};
           scoreItems.forEach((item, idx) => {
             if (idx === scoreItems.length - 1) {
-              scoreMap[item.id] = exam.score - perItem * (scoreItems.length - 1);
+              scoreMap[item.id] = baseScore - perItem * (scoreItems.length - 1);
             } else {
               scoreMap[item.id] = perItem;
             }
@@ -160,9 +167,18 @@ export default function QualityControl() {
     let finalRecheckRequested = recheckRequested;
     let finalRechecker = rechecker;
     let finalRecheckOpinion = recheckOpinion;
+    
+    let originalScore = currentExam.originalScore;
+    let originalDefects = currentExam.originalDefects;
+    
+    const isFirstTimeRecheck = (submitType === "recheck" || (submitType === "pass" && finalRecheckRequested)) && !originalScore;
+    if (isFirstTimeRecheck) {
+      originalScore = currentExam.score > 0 ? currentExam.score : totalScore;
+      originalDefects = currentExam.defects.length > 0 ? [...currentExam.defects] : [...selectedDefects];
+    }
 
     if (submitType === "pass") {
-      newStatus = recheckRequested ? "rechecking" : "qc_passed";
+      newStatus = finalRecheckRequested ? "rechecking" : "qc_passed";
     } else if (submitType === "fail") {
       newStatus = needRetake ? "retake" : "qc_failed";
     } else if (submitType === "recheck") {
@@ -179,13 +195,18 @@ export default function QualityControl() {
     updateExamination(currentExam.id, {
       status: newStatus,
       defects: selectedDefects,
+      originalDefects,
       needRetake,
       retakeType: needRetake ? retakeType : undefined,
       retakeReason: needRetake ? retakeReason : undefined,
       score: totalScore,
+      originalScore,
       recheckRequested: finalRecheckRequested,
       recheckOpinion: finalRecheckOpinion,
-      rechecker: finalRecheckRequested ? finalRechecker : undefined,
+      rechecker: finalRecheckRequested ? finalRechecker : currentExam.rechecker,
+      recheckResult: currentExam.recheckResult,
+      recheckRemark: currentExam.recheckRemark,
+      recheckTime: currentExam.recheckTime,
       remark,
     });
 
@@ -228,6 +249,58 @@ export default function QualityControl() {
 
   return (
     <div className="space-y-4">
+      {currentExam.recheckRequested && (
+        <Alert
+          message={
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center gap-2">
+                <RefreshCw
+                  size={16}
+                  className={`text-medical-orange ${currentExam.status === "rechecking" ? "animate-spin" : ""}`}
+                />
+                <span className="font-medium">
+                  {currentExam.recheckResult
+                    ? `复核已处理：${
+                        currentExam.recheckResult === "passed"
+                          ? "复核通过"
+                          : currentExam.recheckResult === "retake"
+                          ? "退回重拍"
+                          : "需补充说明"
+                      }`
+                    : "当前处于复核流程中"}
+                </span>
+              </div>
+              {currentExam.rechecker && (
+                <span className="text-sm">
+                  复核人：<span className="font-medium">{currentExam.rechecker}</span>
+                </span>
+              )}
+            </div>
+          }
+          description={
+            <div className="space-y-1 mt-1">
+              {currentExam.recheckOpinion && (
+                <div className="text-sm">复核说明：{currentExam.recheckOpinion}</div>
+              )}
+              {currentExam.originalScore !== undefined && (
+                <div className="text-sm">
+                  原质控评分：
+                  <span className="font-medium text-medical-blue">
+                    {currentExam.originalScore}分
+                  </span>
+                  {currentExam.recheckRemark && (
+                    <span className="ml-4">复核意见：{currentExam.recheckRemark}</span>
+                  )}
+                </div>
+              )}
+            </div>
+          }
+          type="warning"
+          showIcon={false}
+          className="border border-orange-200"
+        />
+      )}
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button
@@ -278,18 +351,25 @@ export default function QualityControl() {
             </span>
           </Descriptions.Item>
           <Descriptions.Item label="质控评分">
-            <span
-              className={`font-bold ${
-                totalScore >= 85
-                  ? "text-medical-green"
-                  : totalScore >= 70
-                  ? "text-medical-orange"
-                  : "text-medical-red"
-              }`}
-            >
-              {totalScore}
-            </span>
-            <span className="text-gray-400 text-sm"> / {totalMaxScore}分</span>
+            <>
+              <span
+                className={`font-bold ${
+                  totalScore >= 85
+                    ? "text-medical-green"
+                    : totalScore >= 70
+                    ? "text-medical-orange"
+                    : "text-medical-red"
+                }`}
+              >
+                {totalScore}
+              </span>
+              <span className="text-gray-400 text-sm"> / {totalMaxScore}分</span>
+              {currentExam.originalScore !== undefined && (
+                <Tag color="default" className="ml-2" style={{ margin: 0 }}>
+                  原评分 {currentExam.originalScore}分
+                </Tag>
+              )}
+            </>
           </Descriptions.Item>
           <Descriptions.Item label="已标记缺陷">
             <span
@@ -302,6 +382,105 @@ export default function QualityControl() {
           </Descriptions.Item>
         </Descriptions>
       </Card>
+
+      {(() => {
+        const positionRuleList = [
+          { key: "ccLeftRequired", name: "CC位（左）" },
+          { key: "ccRightRequired", name: "CC位（右）" },
+          { key: "mloLeftRequired", name: "MLO位（左）" },
+          { key: "mloRightRequired", name: "MLO位（右）" },
+          { key: "leftMarkerRequired", name: "左侧标识 (L)" },
+          { key: "rightMarkerRequired", name: "右侧标识 (R)" },
+          { key: "ccMloPairRequired", name: "CC/MLO成套" },
+        ];
+        
+        const disabledRules = positionRuleList.filter(
+          (r) => !positionRules[r.key as keyof typeof positionRules]
+        );
+        const enabledCount = positionRuleList.length - disabledRules.length;
+
+        return (
+          <Collapse
+            size="small"
+            ghost
+            defaultActiveKey={disabledRules.length > 0 ? ["rules"] : []}
+            items={[
+              {
+                key: "rules",
+                label: (
+                  <div className="flex items-center gap-2">
+                    <Settings size={16} className="text-gray-500" />
+                    <span className="font-medium">当前质控规则</span>
+                    <Badge
+                      count={`${enabledCount}/${positionRuleList.length} 生效`}
+                      style={{ backgroundColor: "#52c41a" }}
+                    />
+                    {disabledRules.length > 0 && (
+                      <Tag color="warning" className="ml-2">
+                        {disabledRules.length} 项已关闭
+                      </Tag>
+                    )}
+                  </div>
+                ),
+                children: (
+                  <div className="space-y-3 pl-6">
+                    {disabledRules.length > 0 && (
+                      <Alert
+                        message="以下规则已关闭，质控时不会提示对应缺失项"
+                        type="warning"
+                        showIcon
+                        icon={<Info size={16} />}
+                      />
+                    )}
+                    <Row gutter={[8, 8]}>
+                      {positionRuleList.map((rule) => {
+                        const isEnabled = positionRules[rule.key as keyof typeof positionRules];
+                        return (
+                          <Col xs={12} sm={8} md={6} lg={4} key={rule.key}>
+                            <div
+                              className={`p-2 rounded-lg border text-xs flex items-center gap-2 ${
+                                isEnabled
+                                  ? "bg-green-50 border-green-200"
+                                  : "bg-gray-100 border-gray-200 opacity-60"
+                              }`}
+                            >
+                              {isEnabled ? (
+                                <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
+                              ) : (
+                                <XCircle size={14} className="text-gray-400 flex-shrink-0" />
+                              )}
+                              <span className={isEnabled ? "text-gray-700" : "text-gray-500 line-through"}>
+                                {rule.name}
+                              </span>
+                            </div>
+                          </Col>
+                        );
+                      })}
+                    </Row>
+                    {disabledRules.length > 0 && (
+                      <div className="text-xs text-gray-500">
+                        <span className="text-medical-orange font-medium">注意：</span>
+                        已关闭的规则：
+                        {disabledRules.map((r) => r.name).join("、")}
+                        。如需修改，请前往
+                        <Button
+                          type="link"
+                          size="small"
+                          className="p-0 h-auto text-xs"
+                          onClick={() => navigate("/settings/rules")}
+                        >
+                          规则设置
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ),
+              },
+            ]}
+            className="border border-gray-200 rounded-lg bg-white overflow-hidden"
+          />
+        );
+      })()}
 
       <Steps
         current={currentStep}

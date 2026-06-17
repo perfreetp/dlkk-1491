@@ -111,6 +111,7 @@ interface QCStore {
   addRoom: (room: Room) => void;
   updateRoom: (id: string, data: Partial<Room>) => void;
   updatePositionRules: (rules: Partial<PositionRules>) => void;
+  processRecheck: (examId: string, result: "passed" | "retake" | "supplement", remark: string, processor: string) => void;
 }
 
 export const useQCStore = create<QCStore>()(
@@ -224,6 +225,37 @@ export const useQCStore = create<QCStore>()(
         set((state) => ({
           positionRules: { ...state.positionRules, ...rules },
         })),
+
+      processRecheck: (examId, result, remark, processor) =>
+        set((state) => {
+          const exam = state.examinations.find((e) => e.id === examId);
+          if (!exam) return state;
+
+          let newStatus: Examination["status"] = exam.status;
+          if (result === "passed") {
+            newStatus = "completed";
+          } else if (result === "retake") {
+            newStatus = "retake";
+          } else if (result === "supplement") {
+            newStatus = "qc_pending";
+          }
+
+          return {
+            examinations: state.examinations.map((e) =>
+              e.id === examId
+                ? {
+                    ...e,
+                    status: newStatus,
+                    recheckResult: result,
+                    recheckRemark: remark,
+                    rechecker: processor,
+                    recheckTime: new Date().toISOString().split("T")[0],
+                    recheckRequested: false,
+                  }
+                : e
+            ),
+          };
+        }),
     }),
     {
       name: "qc-workbench-storage",

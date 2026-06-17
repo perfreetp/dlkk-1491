@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Card,
   Table,
@@ -15,6 +15,9 @@ import {
   Row,
   Col,
   Tooltip,
+  List,
+  Badge,
+  Alert,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
@@ -23,9 +26,13 @@ import {
   AlertTriangle,
   FileCheck,
   Target,
+  Eye,
+  XCircle,
+  CheckCircle2,
+  Info,
 } from "lucide-react";
 import { useQCStore } from "@/store";
-import type { DefectType, ScoreItem, DefectCategory, DefectSeverity } from "@/types";
+import type { DefectType, ScoreItem, DefectCategory, DefectSeverity, Examination } from "@/types";
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -43,7 +50,7 @@ const severityMap: Record<DefectSeverity, { text: string; color: string }> = {
 };
 
 export default function SettingsRules() {
-  const { defectTypes, scoreItems, positionRules, updateDefectType, addDefectType, updateScoreItem, addScoreItem, updatePositionRules } = useQCStore();
+  const { defectTypes, scoreItems, positionRules, examinations, updateDefectType, addDefectType, updateScoreItem, addScoreItem, updatePositionRules } = useQCStore();
   const [activeTab, setActiveTab] = useState("positions");
   const [defectModalVisible, setDefectModalVisible] = useState(false);
   const [scoreModalVisible, setScoreModalVisible] = useState(false);
@@ -51,10 +58,73 @@ export default function SettingsRules() {
   const [editingScore, setEditingScore] = useState<ScoreItem | null>(null);
   const [defectForm] = Form.useForm();
   const [scoreForm] = Form.useForm();
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewRuleKey, setPreviewRuleKey] = useState<string | null>(null);
+  const [previewRuleValue, setPreviewRuleValue] = useState<boolean>(false);
+  const [pendingRuleChange, setPendingRuleChange] = useState<{key: string; value: boolean} | null>(null);
+
+  const getAffectedExams = useMemo(() => {
+    if (!previewRuleKey) return [];
+    
+    return examinations.filter((exam: Examination) => {
+      const bodyParts = exam.bodyParts || [];
+      const markers = exam.markers || { left: false, right: false };
+      
+      switch (previewRuleKey) {
+        case "ccLeftRequired":
+          return !bodyParts.includes("CC-L");
+        case "ccRightRequired":
+          return !bodyParts.includes("CC-R");
+        case "mloLeftRequired":
+          return !bodyParts.includes("MLO-L");
+        case "mloRightRequired":
+          return !bodyParts.includes("MLO-R");
+        case "leftMarkerRequired":
+          return !markers.left;
+        case "rightMarkerRequired":
+          return !markers.right;
+        case "ccMloPairRequired": {
+          const hasCC = bodyParts.includes("CC-L") || bodyParts.includes("CC-R");
+          const hasMLO = bodyParts.includes("MLO-L") || bodyParts.includes("MLO-R");
+          return !hasCC || !hasMLO;
+        }
+        default:
+          return false;
+      }
+    });
+  }, [previewRuleKey, examinations]);
 
   const handlePositionRuleChange = (key: keyof typeof positionRules, value: boolean) => {
+    const ruleInfo = positionRuleList.find((r) => r.key === key);
+    
+    if (!value) {
+      setPreviewRuleKey(key);
+      setPreviewRuleValue(value);
+      setPendingRuleChange({ key, value });
+      setPreviewVisible(true);
+    } else {
+      updatePositionRules({ [key]: value } as Partial<typeof positionRules>);
+      message.success(`已开启「${ruleInfo?.name || key}」规则`);
+    }
+  };
+
+  const confirmRuleChange = () => {
+    if (!pendingRuleChange) return;
+    
+    const { key, value } = pendingRuleChange;
+    const ruleInfo = positionRuleList.find((r) => r.key === key);
+    
     updatePositionRules({ [key]: value } as Partial<typeof positionRules>);
-    message.success("规则设置已更新");
+    message.success(`已关闭「${ruleInfo?.name || key}」规则`);
+    setPreviewVisible(false);
+    setPendingRuleChange(null);
+    setPreviewRuleKey(null);
+  };
+
+  const cancelRuleChange = () => {
+    setPreviewVisible(false);
+    setPendingRuleChange(null);
+    setPreviewRuleKey(null);
   };
 
   const openDefectModal = (defect?: DefectType) => {
@@ -269,10 +339,28 @@ export default function SettingsRules() {
                               <Card size="small" className="h-full" styles={{ body: { padding: 14 } }}>
                                 <div className="flex items-start justify-between">
                                   <div className="flex-1">
-                                    <span className="font-medium text-gray-800 text-sm">
-                                      {rule.name}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium text-gray-800 text-sm">
+                                        {rule.name}
+                                      </span>
+                                      {!positionRules[rule.key as keyof typeof positionRules] && (
+                                        <Badge status="default" text="已关闭" size="small" />
+                                      )}
+                                    </div>
                                     <p className="text-xs text-gray-500 mt-1">{rule.description}</p>
+                                    <Button
+                                      type="link"
+                                      size="small"
+                                      icon={<Eye size={12} />}
+                                      className="p-0 h-auto text-xs mt-1"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPreviewRuleKey(rule.key);
+                                        setPreviewVisible(true);
+                                      }}
+                                    >
+                                      预览影响
+                                    </Button>
                                   </div>
                                   <Switch
                                     size="small"
@@ -441,6 +529,154 @@ export default function SettingsRules() {
             <TextArea rows={3} placeholder="描述该评分项的评分标准和扣分规则" />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title={
+          <div className="flex items-center gap-2">
+            <Eye size={20} className="text-medical-blue" />
+            规则影响预览
+          </div>
+        }
+        open={previewVisible}
+        onOk={pendingRuleChange ? confirmRuleChange : undefined}
+        onCancel={cancelRuleChange}
+        okText={pendingRuleChange ? "确认关闭规则" : "关闭"}
+        cancelText="取消"
+        okButtonProps={{
+          danger: true,
+          disabled: !pendingRuleChange,
+        }}
+        width={700}
+      >
+        {previewRuleKey && (
+          <div className="space-y-4">
+            {(() => {
+              const ruleInfo = positionRuleList.find((r) => r.key === previewRuleKey);
+              const isEnabled = positionRules[previewRuleKey as keyof typeof positionRules];
+              return (
+                <div>
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <h3 className="font-medium text-gray-800">
+                        {ruleInfo?.name || previewRuleKey}
+                      </h3>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {ruleInfo?.description}
+                      </p>
+                    </div>
+                    <div>
+                      {isEnabled ? (
+                        <Tag color="success" icon={<CheckCircle2 size={12} />}>
+                          当前开启
+                        </Tag>
+                      ) : (
+                        <Tag color="default" icon={<XCircle size={12} />}>
+                          当前关闭
+                        </Tag>
+                      )}
+                    </div>
+                  </div>
+
+                  {pendingRuleChange && !pendingRuleChange.value && (
+                    <Alert
+                      message="关闭此规则后，以下检查将不再提示对应缺失项"
+                      type="warning"
+                      showIcon
+                      className="mt-4"
+                    />
+                  )}
+
+                  {!pendingRuleChange && !isEnabled && (
+                    <Alert
+                      message="此规则当前已关闭，以下检查不提示对应缺失项"
+                      type="info"
+                      showIcon
+                      className="mt-4"
+                    />
+                  )}
+
+                  {!pendingRuleChange && isEnabled && (
+                    <Alert
+                      message="此规则当前已开启，以下检查会提示对应缺失项"
+                      type="success"
+                      showIcon
+                      className="mt-4"
+                    />
+                  )}
+                </div>
+              );
+            })()}
+
+            <div>
+              <h4 className="font-medium text-gray-700 mb-3 flex items-center gap-2">
+                <Info size={16} className="text-medical-blue" />
+                受影响的检查（{getAffectedExams.length}例）
+              </h4>
+              {getAffectedExams.length === 0 ? (
+                <div className="text-center py-8 bg-green-50 rounded-lg border border-green-100">
+                  <CheckCircle2 size={48} className="text-medical-green mx-auto mb-2" />
+                  <p className="text-gray-600">暂无受影响的检查</p>
+                  <p className="text-sm text-gray-400">现有检查均满足此规则要求</p>
+                </div>
+              ) : (
+                <div className="max-h-80 overflow-y-auto border rounded-lg">
+                  <List
+                    dataSource={getAffectedExams.slice(0, 20)}
+                    renderItem={(exam: Examination) => (
+                      <List.Item className="px-4 py-3 hover:bg-gray-50 border-b last:border-b-0">
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-medical-blue/10 flex items-center justify-center text-medical-blue font-medium text-sm">
+                              {exam.patientName.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-800 text-sm">
+                                {exam.patientName}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {exam.patientId} · {exam.examTime}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <Tag color="warning" style={{ fontSize: 12 }}>
+                              缺失{(() => {
+                                switch (previewRuleKey) {
+                                  case "ccLeftRequired": return "CC左";
+                                  case "ccRightRequired": return "CC右";
+                                  case "mloLeftRequired": return "MLO左";
+                                  case "mloRightRequired": return "MLO右";
+                                  case "leftMarkerRequired": return "L标识";
+                                  case "rightMarkerRequired": return "R标识";
+                                  case "ccMloPairRequired": return "体位成套";
+                                  default: return "";
+                                }
+                              })()}
+                            </Tag>
+                          </div>
+                        </div>
+                      </List.Item>
+                    )}
+                  />
+                  {getAffectedExams.length > 20 && (
+                    <div className="p-3 text-center text-sm text-gray-400 bg-gray-50 border-t">
+                      仅显示前20条，共{getAffectedExams.length}条受影响记录
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {pendingRuleChange && (
+              <Alert
+                message={`关闭规则后，图像质控页将不再提示「${positionRuleList.find(r => r.key === previewRuleKey)?.name}」相关的缺失项，质控员可能无法发现该类问题，是否继续？`}
+                type="error"
+                showIcon
+              />
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   );

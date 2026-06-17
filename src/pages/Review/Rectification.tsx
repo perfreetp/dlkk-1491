@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Card,
   Table,
@@ -16,6 +16,8 @@ import {
   message,
   Drawer,
   Descriptions,
+  Segmented,
+  Badge,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
@@ -27,9 +29,12 @@ import {
   Eye,
   Calendar,
   User,
+  AlertTriangle,
+  XCircle,
 } from "lucide-react";
 import { useQCStore } from "@/store";
 import type { RectificationTask, RectificationStatus } from "@/types";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
 
 const { Option } = Select;
@@ -45,15 +50,41 @@ const statusMap: Record<
 };
 
 export default function ReviewRectification() {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { rectificationTasks, updateRectificationTask, examinations, defectTypes } = useQCStore();
   const [createVisible, setCreateVisible] = useState(false);
   const [detailVisible, setDetailVisible] = useState(false);
   const [selectedTask, setSelectedTask] = useState<RectificationTask | null>(null);
+  const [quickFilter, setQuickFilter] = useState<string>("all");
   const [form] = Form.useForm();
+  const tableRef = useRef<any>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const highlight = searchParams.get("highlight");
+    if (highlight) {
+      setHighlightId(highlight);
+      const task = rectificationTasks.find((t) => t.id === highlight);
+      if (task) {
+        setTimeout(() => {
+          setSelectedTask(task);
+          setDetailVisible(true);
+          const row = document.querySelector(`[data-row-key="${highlight}"]`);
+          if (row) {
+            row.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }, 300);
+      }
+      searchParams.delete("highlight");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams, rectificationTasks]);
 
   const openDetail = (task: RectificationTask) => {
     setSelectedTask(task);
     setDetailVisible(true);
+    setHighlightId(task.id);
   };
 
   const handleComplete = (task: RectificationTask) => {
@@ -101,11 +132,23 @@ export default function ReviewRectification() {
     }
   };
 
+  const filteredTasks = useMemo(() => {
+    return rectificationTasks.filter((t) => {
+      const isOverdue = t.status !== "completed" && dayjs(t.deadline).isBefore(dayjs());
+      if (quickFilter === "pending") return t.status === "pending" && !isOverdue;
+      if (quickFilter === "in_progress") return t.status === "in_progress" && !isOverdue;
+      if (quickFilter === "overdue") return isOverdue;
+      if (quickFilter === "completed") return t.status === "completed";
+      return true;
+    });
+  }, [rectificationTasks, quickFilter]);
+
   const stats = {
     total: rectificationTasks.length,
     pending: rectificationTasks.filter((t) => t.status === "pending").length,
     inProgress: rectificationTasks.filter((t) => t.status === "in_progress").length,
     completed: rectificationTasks.filter((t) => t.status === "completed").length,
+    overdue: rectificationTasks.filter((t) => t.status !== "completed" && dayjs(t.deadline).isBefore(dayjs())).length,
   };
 
   const progress =
@@ -157,7 +200,7 @@ export default function ReviewRectification() {
       title: "截止日期",
       dataIndex: "deadline",
       key: "deadline",
-      width: 120,
+      width: 160,
       render: (deadline: string, record) => {
         const overdue =
           record.status !== "completed" && dayjs(deadline).isBefore(dayjs());
@@ -179,8 +222,16 @@ export default function ReviewRectification() {
       title: "状态",
       dataIndex: "status",
       key: "status",
-      width: 100,
-      render: (status: RectificationStatus) => {
+      width: 120,
+      render: (status: RectificationStatus, record) => {
+        const overdue = record.status !== "completed" && dayjs(record.deadline).isBefore(dayjs());
+        if (overdue) {
+          return (
+            <Tag color="error" icon={<XCircle size={12} />} style={{ margin: 0 }}>
+              已逾期
+            </Tag>
+          );
+        }
         const s = statusMap[status];
         const Icon = s.icon;
         return (
@@ -220,6 +271,46 @@ export default function ReviewRectification() {
     },
   ];
 
+  const quickFilterOptions = [
+    { label: "全部", value: "all" },
+    { 
+      label: (
+        <span className="flex items-center gap-1">
+          <Badge color="orange" /> 待整改
+          <Tag color="orange" className="ml-1" style={{ margin: 0 }}>{stats.pending}</Tag>
+        </span>
+      ), 
+      value: "pending" 
+    },
+    { 
+      label: (
+        <span className="flex items-center gap-1">
+          <Badge color="processing" /> 整改中
+          <Tag color="processing" className="ml-1" style={{ margin: 0 }}>{stats.inProgress}</Tag>
+        </span>
+      ), 
+      value: "in_progress" 
+    },
+    { 
+      label: (
+        <span className="flex items-center gap-1">
+          <AlertTriangle size={14} className="text-medical-red" /> 已逾期
+          <Tag color="red" className="ml-1" style={{ margin: 0 }}>{stats.overdue}</Tag>
+        </span>
+      ), 
+      value: "overdue" 
+    },
+    { 
+      label: (
+        <span className="flex items-center gap-1">
+          <Badge color="success" /> 已完成
+          <Tag color="success" className="ml-1" style={{ margin: 0 }}>{stats.completed}</Tag>
+        </span>
+      ), 
+      value: "completed" 
+    },
+  ];
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -239,25 +330,25 @@ export default function ReviewRectification() {
       </div>
 
       <Row gutter={[16, 16]}>
-        <Col xs={24} sm={6}>
+        <Col xs={24} sm={12} lg={6}>
           <Card className="h-full">
             <p className="text-sm text-gray-600 mb-2">整改任务总数</p>
             <p className="text-3xl font-bold text-gray-800">{stats.total}</p>
           </Card>
         </Col>
-        <Col xs={24} sm={6}>
+        <Col xs={24} sm={12} lg={6}>
           <Card className="h-full">
             <p className="text-sm text-gray-600 mb-2">待整改</p>
             <p className="text-3xl font-bold text-medical-orange">{stats.pending}</p>
           </Card>
         </Col>
-        <Col xs={24} sm={6}>
+        <Col xs={24} sm={12} lg={6}>
           <Card className="h-full">
             <p className="text-sm text-gray-600 mb-2">整改中</p>
             <p className="text-3xl font-bold text-medical-blue">{stats.inProgress}</p>
           </Card>
         </Col>
-        <Col xs={24} sm={6}>
+        <Col xs={24} sm={12} lg={6}>
           <Card className="h-full">
             <p className="text-sm text-gray-600 mb-2">整改进度</p>
             <div className="flex items-center gap-2">
@@ -274,11 +365,27 @@ export default function ReviewRectification() {
         </Col>
       </Row>
 
-      <Card styles={{ body: { padding: 0 } }}>
+      <Card styles={{ body: { padding: "16px" } }}>
+        <div className="mb-4">
+          <Segmented
+            options={quickFilterOptions}
+            value={quickFilter}
+            onChange={setQuickFilter}
+            size="large"
+            className="w-full"
+          />
+        </div>
         <Table
           columns={columns}
-          dataSource={rectificationTasks}
+          dataSource={filteredTasks}
           rowKey="id"
+          ref={tableRef}
+          rowClassName={(record) =>
+            record.id === highlightId
+              ? "bg-yellow-50 border-l-4 border-l-yellow-400"
+              : ""
+          }
+          scroll={{ x: 1200 }}
           pagination={{
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 条`,
@@ -377,7 +484,10 @@ export default function ReviewRectification() {
       <Drawer
         title="整改任务详情"
         open={detailVisible}
-        onClose={() => setDetailVisible(false)}
+        onClose={() => {
+          setDetailVisible(false);
+          setHighlightId(null);
+        }}
         width={600}
       >
         {selectedTask && (
@@ -386,9 +496,15 @@ export default function ReviewRectification() {
               <h2 className="text-lg font-semibold text-gray-800 mb-1">
                 {selectedTask.title}
               </h2>
-              <Tag color={statusMap[selectedTask.status].color}>
-                {statusMap[selectedTask.status].text}
-              </Tag>
+              {selectedTask.status !== "completed" && dayjs(selectedTask.deadline).isBefore(dayjs()) ? (
+                <Tag color="error" icon={<XCircle size={12} />}>
+                  已逾期
+                </Tag>
+              ) : (
+                <Tag color={statusMap[selectedTask.status].color}>
+                  {statusMap[selectedTask.status].text}
+                </Tag>
+              )}
             </div>
 
             <Descriptions column={1} bordered size="small">
@@ -436,6 +552,20 @@ export default function ReviewRectification() {
               <div>
                 <h3 className="font-medium text-gray-700 mb-2">备注</h3>
                 <p className="text-gray-600">{selectedTask.remark}</p>
+              </div>
+            )}
+
+            {selectedTask.status !== "completed" && (
+              <div className="pt-4 border-t">
+                <Button
+                  type="primary"
+                  icon={<CheckCircle2 size={16} />}
+                  onClick={() => {
+                    handleComplete(selectedTask);
+                  }}
+                >
+                  标记为已完成
+                </Button>
               </div>
             )}
           </div>

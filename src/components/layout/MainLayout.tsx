@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Layout, Menu, Avatar, Dropdown, Badge, Breadcrumb } from "antd";
 import type { MenuProps } from "antd";
 import {
@@ -11,50 +11,12 @@ import {
   Bell,
   LogOut,
   User,
+  RefreshCw,
 } from "lucide-react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useQCStore } from "@/store";
 
 const { Header, Sider, Content } = Layout;
-
-const menuItems: MenuProps["items"] = [
-  {
-    key: "/",
-    icon: <LayoutDashboard size={18} />,
-    label: "科室看板",
-  },
-  {
-    key: "/queue",
-    icon: <ListChecks size={18} />,
-    label: "检查队列",
-  },
-  {
-    key: "/quality",
-    icon: <ImageIcon size={18} />,
-    label: "图像质控",
-  },
-  {
-    key: "/review",
-    icon: <FileSearch size={18} />,
-    label: "问题复盘",
-    children: [
-      { key: "/review/statistics", label: "统计分析" },
-      { key: "/review/cases", label: "典型案例库" },
-      { key: "/review/rectification", label: "整改追踪" },
-      { key: "/review/report", label: "质控简报" },
-    ],
-  },
-  {
-    key: "/settings",
-    icon: <Settings size={18} />,
-    label: "规则设置",
-    children: [
-      { key: "/settings/rules", label: "质控规则" },
-      { key: "/settings/notification", label: "通知设置" },
-      { key: "/settings/staff", label: "人员管理" },
-    ],
-  },
-];
 
 const breadcrumbMap: Record<string, string[]> = {
   "/": ["科室看板"],
@@ -63,6 +25,7 @@ const breadcrumbMap: Record<string, string[]> = {
   "/review/statistics": ["问题复盘", "统计分析"],
   "/review/cases": ["问题复盘", "典型案例库"],
   "/review/rectification": ["问题复盘", "整改追踪"],
+  "/review/recheck": ["问题复盘", "复核处理"],
   "/review/report": ["问题复盘", "质控简报"],
   "/settings/rules": ["规则设置", "质控规则"],
   "/settings/notification": ["规则设置", "通知设置"],
@@ -73,7 +36,66 @@ export default function MainLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentUser } = useQCStore();
+  const { currentUser, examinations } = useQCStore();
+
+  const pendingRecheckCount = useMemo(() => {
+    return examinations.filter((e) => e.recheckRequested === true).length;
+  }, [examinations]);
+
+  const menuItems: MenuProps["items"] = useMemo(() => [
+    {
+      key: "/",
+      icon: <LayoutDashboard size={18} />,
+      label: "科室看板",
+    },
+    {
+      key: "/queue",
+      icon: <ListChecks size={18} />,
+      label: "检查队列",
+    },
+    {
+      key: "/quality",
+      icon: <ImageIcon size={18} />,
+      label: "图像质控",
+    },
+    {
+      key: "/review",
+      icon: <FileSearch size={18} />,
+      label: "问题复盘",
+      children: [
+        { key: "/review/statistics", label: "统计分析" },
+        { key: "/review/cases", label: "典型案例库" },
+        { key: "/review/rectification", label: "整改追踪" },
+        {
+          key: "/review/recheck",
+          label: (
+            <span className="flex items-center justify-between">
+              复核处理
+              {pendingRecheckCount > 0 && (
+                <Badge
+                  count={pendingRecheckCount}
+                  size="small"
+                  color="#f5222d"
+                  offset={[4, 0]}
+                />
+              )}
+            </span>
+          ),
+        },
+        { key: "/review/report", label: "质控简报" },
+      ],
+    },
+    {
+      key: "/settings",
+      icon: <Settings size={18} />,
+      label: "规则设置",
+      children: [
+        { key: "/settings/rules", label: "质控规则" },
+        { key: "/settings/notification", label: "通知设置" },
+        { key: "/settings/staff", label: "人员管理" },
+      ],
+    },
+  ], [pendingRecheckCount]);
 
   const getSelectedKeys = () => {
     const path = location.pathname;

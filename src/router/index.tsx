@@ -6,6 +6,7 @@ import QualityControl from "@/pages/QualityControl";
 import ReviewStatistics from "@/pages/Review/Statistics";
 import ReviewCases from "@/pages/Review/Cases";
 import ReviewRectification from "@/pages/Review/Rectification";
+import ReviewRecheck from "@/pages/Review/Recheck";
 import ReviewReport from "@/pages/Review/Report";
 import SettingsRules from "@/pages/Settings/Rules";
 import SettingsNotification from "@/pages/Settings/Notification";
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
       { path: "review/statistics", element: <ReviewStatistics /> },
       { path: "review/cases", element: <ReviewCases /> },
       { path: "review/rectification", element: <ReviewRectification /> },
+      { path: "review/recheck", element: <ReviewRecheck /> },
       { path: "review/report", element: <ReviewReport /> },
       { path: "settings/rules", element: <SettingsRules /> },
       { path: "settings/notification", element: <SettingsNotification /> },

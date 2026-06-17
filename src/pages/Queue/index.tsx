@@ -200,26 +200,76 @@ export default function Queue() {
       title: "质控评分",
       dataIndex: "score",
       key: "score",
-      width: 100,
+      width: 130,
       render: (score: number, record) => {
-        if (record.status === "qc_pending" || record.status === "rechecking") {
+        if (record.status === "qc_pending") {
           return <span className="text-gray-400 text-sm">待评分</span>;
         }
+        const showScore = record.originalScore ?? score;
         return (
-          <span
-            className={`font-semibold ${
-              score >= 85
-                ? "text-medical-green"
-                : score >= 70
-                ? "text-medical-orange"
-                : "text-medical-red"
-            }`}
-          >
-            {score}分
-          </span>
+          <div>
+            <span
+              className={`font-semibold ${
+                showScore >= 85
+                  ? "text-medical-green"
+                  : showScore >= 70
+                  ? "text-medical-orange"
+                  : "text-medical-red"
+              }`}
+            >
+              {showScore}分
+            </span>
+            {record.originalScore !== undefined && (
+              <div className="text-xs text-gray-400">原评分</div>
+            )}
+          </div>
         );
       },
-      sorter: (a, b) => a.score - b.score,
+      sorter: (a, b) => (a.originalScore ?? a.score) - (b.originalScore ?? b.score),
+    },
+    {
+      title: "复核信息",
+      key: "recheck",
+      width: 220,
+      render: (_, record) => {
+        if (!record.recheckRequested) {
+          return <span className="text-gray-400 text-sm">-</span>;
+        }
+        return (
+          <div className="text-xs">
+            {record.rechecker && (
+              <div className="flex items-center gap-1 mb-1">
+                <span className="text-gray-500">复核人：</span>
+                <span className="font-medium text-gray-700">{record.rechecker}</span>
+              </div>
+            )}
+            {record.recheckOpinion && (
+              <div className="text-gray-500 line-clamp-2" title={record.recheckOpinion}>
+                {record.recheckOpinion}
+              </div>
+            )}
+            {record.recheckResult && (
+              <Tag
+                color={
+                  record.recheckResult === "passed"
+                    ? "success"
+                    : record.recheckResult === "retake"
+                    ? "error"
+                    : "warning"
+                }
+                className="mt-1"
+                style={{ margin: 0 }}
+              >
+                {record.recheckResult === "passed"
+                  ? "复核通过"
+                  : record.recheckResult === "retake"
+                  ? "退回重拍"
+                  : "需补充说明"}
+              </Tag>
+            )}
+          </div>
+        );
+      },
     },
     {
       title: "质量缺陷",

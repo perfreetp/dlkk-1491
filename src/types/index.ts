@@ -14,6 +14,8 @@ export interface Positions {
   mloRight: boolean;
 }
 
+export type RecheckResult = "passed" | "retake" | "supplement";
+
 export interface Examination {
   id: string;
   patientId: string;
@@ -21,6 +23,7 @@ export interface Examination {
   patientAge: number;
   patientGender: "女" | "男";
   examTime: string;
+  examType: string;
   technician: string;
   technicianId: string;
   room: string;
@@ -28,15 +31,22 @@ export interface Examination {
   positions: Positions;
   leftMarkerPresent: boolean;
   rightMarkerPresent: boolean;
+  bodyParts?: string[];
+  markers?: { left: boolean; right: boolean };
   status: ExamStatus;
   score: number;
+  originalScore?: number;
   defects: string[];
+  originalDefects?: string[];
   needRetake: boolean;
   retakeType?: "equipment" | "operation";
   retakeReason?: string;
   recheckRequested: boolean;
   recheckOpinion?: string;
   rechecker?: string;
+  recheckResult?: RecheckResult;
+  recheckRemark?: string;
+  recheckTime?: string;
   remark?: string;
 }
 
@@ -50,6 +60,7 @@ export interface DefectType {
   category: DefectCategory;
   severity: DefectSeverity;
   causeRetake: boolean;
+  penalty: number;
   description: string;
 }
 

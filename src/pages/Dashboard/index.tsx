@@ -323,7 +323,7 @@ export default function Dashboard() {
                     if (item.type === "qc" || item.type === "recheck") {
                       navigate(`/quality/${item.id}`);
                     } else {
-                      navigate("/review/rectification");
+                      navigate(`/review/rectification?highlight=${item.id}`);
                     }
                   }}
                 >

@@ -40,6 +40,7 @@ export const defectTypes: DefectType[] = [
     category: "position",
     severity: "critical",
     causeRetake: true,
+    penalty: 10,
     description: "头尾位(CC)拍摄不完整或缺失",
   },
   {
@@ -49,6 +50,7 @@ export const defectTypes: DefectType[] = [
     category: "position",
     severity: "critical",
     causeRetake: true,
+    penalty: 10,
     description: "内外斜位(MLO)拍摄不完整或缺失",
   },
   {
@@ -58,6 +60,7 @@ export const defectTypes: DefectType[] = [
     category: "marker",
     severity: "major",
     causeRetake: true,
+    penalty: 8,
     description: "图像左侧(L)标识未显示或位置错误",
   },
   {
@@ -67,6 +70,7 @@ export const defectTypes: DefectType[] = [
     category: "marker",
     severity: "major",
     causeRetake: true,
+    penalty: 8,
     description: "图像右侧(R)标识未显示或位置错误",
   },
   {
@@ -76,6 +80,7 @@ export const defectTypes: DefectType[] = [
     category: "image",
     severity: "minor",
     causeRetake: false,
+    penalty: 3,
     description: "皮肤皱褶影响图像诊断质量",
   },
   {
@@ -85,6 +90,7 @@ export const defectTypes: DefectType[] = [
     category: "image",
     severity: "major",
     causeRetake: true,
+    penalty: 8,
     description: "乳头未在切线位显示，可能遮挡病变",
   },
   {
@@ -94,34 +100,38 @@ export const defectTypes: DefectType[] = [
     category: "image",
     severity: "major",
     causeRetake: false,
+    penalty: 5,
     description: "MLO位胸大肌未显示至乳头线或显示不充分",
   },
   {
     id: "d8",
     code: "I004",
-    name: "乳房后组织覆盖不足",
+    name: "腺体组织未充分牵拉",
     category: "image",
     severity: "major",
-    causeRetake: true,
-    description: "乳房后部组织未充分显示，可能遗漏深部病变",
+    causeRetake: false,
+    penalty: 5,
+    description: "腺体组织未充分牵拉展开，可能遗漏深部病变",
   },
   {
     id: "d9",
     code: "I005",
-    name: "图像伪影",
+    name: "图像模糊",
     category: "image",
-    severity: "minor",
-    causeRetake: false,
-    description: "设备或运动导致的图像伪影",
+    severity: "critical",
+    causeRetake: true,
+    penalty: 15,
+    description: "图像模糊、对比度差或曝光不足",
   },
   {
     id: "d10",
     code: "I006",
-    name: "曝光不足/过度",
+    name: "伪影",
     category: "image",
-    severity: "major",
-    causeRetake: true,
-    description: "图像曝光条件不当，影响对比度和细节显示",
+    severity: "minor",
+    causeRetake: false,
+    penalty: 3,
+    description: "设备伪影、异物或体外异物显影",
   },
 ];
 
@@ -187,6 +197,7 @@ export const mockExaminations: Examination[] = Array.from({ length: 35 }, (_, i)
       .hour(8 + (i % 10))
       .minute((i * 7) % 60)
       .format("YYYY-MM-DD HH:mm"),
+    examType: "乳腺DR筛查",
     technician: tech.name,
     technicianId: tech.id,
     room: room.name,
@@ -194,13 +205,23 @@ export const mockExaminations: Examination[] = Array.from({ length: 35 }, (_, i)
     positions,
     leftMarkerPresent: !(defects.includes("d3")),
     rightMarkerPresent: !(defects.includes("d4")),
+    bodyParts: [
+      positions.ccLeft ? "CC-L" : "",
+      positions.ccRight ? "CC-R" : "",
+      positions.mloLeft ? "MLO-L" : "",
+      positions.mloRight ? "MLO-R" : "",
+    ].filter(Boolean),
+    markers: {
+      left: !(defects.includes("d3")),
+      right: !(defects.includes("d4")),
+    },
     status,
     score: status === "qc_passed" || status === "completed" ? 85 + Math.floor(Math.random() * 15) :
            status === "qc_pending" || status === "rechecking" ? 0 :
            55 + Math.floor(Math.random() * 25),
     defects,
     needRetake,
-    retakeType: needRetake ? (Math.random() > 0.4 ? "operation" : "equipment") as const : undefined,
+    retakeType: needRetake ? (Math.random() > 0.4 ? "operation" : "equipment") : undefined,
     retakeReason: needRetake ? (Math.random() > 0.4 ? "体位不标准，需要重新拍摄" : "设备伪影影响诊断") : undefined,
     recheckRequested: status === "rechecking" || Math.random() > 0.85,
     recheckOpinion: status === "completed" ? "图像质量可接受，同意诊断报告" : undefined,
