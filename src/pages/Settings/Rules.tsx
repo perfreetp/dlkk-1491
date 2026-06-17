@@ -31,7 +31,7 @@ import {
   CheckCircle2,
   Info,
 } from "lucide-react";
-import { useQCStore } from "@/store";
+import { useQCStore, getPositionMissing } from "@/store";
 import type { DefectType, ScoreItem, DefectCategory, DefectSeverity, Examination } from "@/types";
 
 const { Option } = Select;
@@ -69,55 +69,15 @@ export default function SettingsRules() {
     const results: { exam: Examination; missingInfo: string[] }[] = [];
     
     examinations.forEach((exam: Examination) => {
-      const bodyParts = exam.bodyParts || [];
-      const markers = exam.markers || { left: false, right: false };
-      const missing: string[] = [];
-      
-      switch (previewRuleKey) {
-        case "ccLeftRequired":
-          if (!bodyParts.includes("CC-L")) missing.push("CC左");
-          break;
-        case "ccRightRequired":
-          if (!bodyParts.includes("CC-R")) missing.push("CC右");
-          break;
-        case "mloLeftRequired":
-          if (!bodyParts.includes("MLO-L")) missing.push("MLO左");
-          break;
-        case "mloRightRequired":
-          if (!bodyParts.includes("MLO-R")) missing.push("MLO右");
-          break;
-        case "leftMarkerRequired":
-          if (!markers.left) missing.push("L标识");
-          break;
-        case "rightMarkerRequired":
-          if (!markers.right) missing.push("R标识");
-          break;
-        case "ccMloPairRequired": {
-          const hasCCLeft = bodyParts.includes("CC-L");
-          const hasCCRight = bodyParts.includes("CC-R");
-          const hasMLOLeft = bodyParts.includes("MLO-L");
-          const hasMLORight = bodyParts.includes("MLO-R");
-          
-          if (hasCCLeft && !hasMLOLeft) missing.push("左侧：缺MLO");
-          if (!hasCCLeft && hasMLOLeft) missing.push("左侧：缺CC");
-          if (!hasCCLeft && !hasMLOLeft) missing.push("左侧：CC和MLO都缺");
-          
-          if (hasCCRight && !hasMLORight) missing.push("右侧：缺MLO");
-          if (!hasCCRight && hasMLORight) missing.push("右侧：缺CC");
-          if (!hasCCRight && !hasMLORight) missing.push("右侧：CC和MLO都缺");
-          break;
-        }
-        default:
-          break;
-      }
-      
-      if (missing.length > 0) {
-        results.push({ exam, missingInfo: missing });
+      const missing = getPositionMissing(exam, positionRules);
+      const matched = missing.find((m) => m.ruleKey === previewRuleKey);
+      if (matched) {
+        results.push({ exam, missingInfo: matched.missing });
       }
     });
     
     return results;
-  }, [previewRuleKey, examinations]);
+  }, [previewRuleKey, examinations, positionRules]);
 
   const handlePositionRuleChange = (key: keyof typeof positionRules, value: boolean) => {
     const ruleInfo = positionRuleList.find((r) => r.key === key);

@@ -43,7 +43,7 @@ import {
   History,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useQCStore, getStatusText, getStatusColor, getDefectName } from "@/store";
+import { useQCStore, getStatusText, getStatusColor, getDefectName, getPositionMissing } from "@/store";
 import type { Examination, DefectType, RecheckHistoryItem } from "@/types";
 import dayjs from "dayjs";
 
@@ -695,31 +695,25 @@ export default function QualityControl() {
                     );
                   })}
                 </div>
-                {positionRules.ccLeftRequired &&
-                  positionRules.ccRightRequired &&
-                  positionRules.mloLeftRequired &&
-                  positionRules.mloRightRequired &&
-                  (!currentExam.positions.ccLeft ||
-                    !currentExam.positions.ccRight ||
-                    !currentExam.positions.mloLeft ||
-                    !currentExam.positions.mloRight) && (
-                    <Alert
-                      message="存在体位缺失，建议标记为重拍"
-                      type="error"
-                      showIcon
-                      className="mt-4"
-                    />
-                  )}
-                {positionRules.ccMloPairRequired &&
-                  (currentExam.positions.ccLeft !== currentExam.positions.mloLeft ||
-                    currentExam.positions.ccRight !== currentExam.positions.mloRight) && (
-                    <Alert
-                      message="CC与MLO体位不成套，请注意检查"
-                      type="warning"
-                      showIcon
-                      className="mt-4"
-                    />
-                  )}
+                {(() => {
+                  const missingInfo = getPositionMissing(currentExam, positionRules);
+                  const positionMissing = missingInfo.filter(
+                    (m) => m.ruleKey !== "leftMarkerRequired" && m.ruleKey !== "rightMarkerRequired"
+                  );
+                  if (positionMissing.length === 0) return null;
+                  return (
+                    <div className="mt-4 space-y-2">
+                      {positionMissing.map((item) => (
+                        <Alert
+                          key={item.ruleKey}
+                          message={`${item.ruleName}：${item.missing.join("、")}`}
+                          type={item.ruleKey === "ccMloPairRequired" ? "warning" : "error"}
+                          showIcon
+                        />
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             </Col>
             <Col xs={24} md={12}>

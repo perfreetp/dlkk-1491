@@ -71,7 +71,7 @@ export default function ReviewRecheck() {
     addRectificationTask,
     staff,
   } = useQCStore();
-  const [activeTab, setActiveTab] = useState("pending");
+  const [activeTab, setActiveTab] = useState("overview");
   const [detailVisible, setDetailVisible] = useState(false);
   const [selectedExam, setSelectedExam] = useState<Examination | null>(null);
   const [processModalVisible, setProcessModalVisible] = useState(false);
@@ -80,21 +80,51 @@ export default function ReviewRecheck() {
   const [createRectification, setCreateRectification] = useState(false);
   const [rectificationForm] = Form.useForm();
 
-  const pendingRecheckExams = useMemo(() => {
+  const pendingDirectorExams = useMemo(() => {
     return examinations.filter((e) => e.recheckRequested === true);
   }, [examinations]);
 
-  const processedExams = useMemo(() => {
+  const returnedExams = useMemo(() => {
+    return examinations.filter((e) => {
+      if (!e.recheckHistory || e.recheckHistory.length === 0) return false;
+      const hasRetakeOrSupplement = e.recheckHistory.some(
+        (h) => h.action === "process" && (h.result === "retake" || h.result === "supplement")
+      );
+      const hasReSubmit = e.recheckHistory.some((h) => h.action === "re_submit");
+      return hasRetakeOrSupplement && !hasReSubmit && !e.recheckRequested;
+    });
+  }, [examinations]);
+
+  const reSubmittedExams = useMemo(() => {
+    return examinations.filter((e) => {
+      if (!e.recheckHistory || e.recheckHistory.length === 0) return false;
+      const hasRetakeOrSupplement = e.recheckHistory.some(
+        (h) => h.action === "process" && (h.result === "retake" || h.result === "supplement")
+      );
+      const hasReSubmit = e.recheckHistory.some((h) => h.action === "re_submit");
+      return hasRetakeOrSupplement && hasReSubmit && e.recheckRequested;
+    });
+  }, [examinations]);
+
+  const finalPassedExams = useMemo(() => {
+    return examinations.filter((e) => e.recheckResult === "passed");
+  }, [examinations]);
+
+  const allRecheckExams = useMemo(() => {
     return examinations.filter(
-      (e) =>
-        e.recheckResult &&
-        !e.recheckRequested &&
-        (e.recheckHistory && e.recheckHistory.length > 0)
+      (e) => e.recheckHistory && e.recheckHistory.length > 0
     );
   }, [examinations]);
 
-  const displayExams =
-    activeTab === "pending" ? pendingRecheckExams : processedExams;
+  const getStageExams = useMemo(() => {
+    switch (activeTab) {
+      case "pending": return pendingDirectorExams;
+      case "returned": return returnedExams;
+      case "resubmitted": return reSubmittedExams;
+      case "passed": return finalPassedExams;
+      default: return allRecheckExams;
+    }
+  }, [activeTab, pendingDirectorExams, returnedExams, reSubmittedExams, finalPassedExams, allRecheckExams]);
 
   const openDetail = (exam: Examination) => {
     setSelectedExam(exam);
@@ -115,6 +145,17 @@ export default function ReviewRecheck() {
 
     try {
       const values = await form.validateFields();
+
+      let rectValues = null;
+      if (createRectification && processType !== "passed") {
+        try {
+          rectValues = await rectificationForm.validateFields();
+        } catch {
+          message.warning("请先完整填写整改任务信息");
+          return;
+        }
+      }
+
       processRecheck(
         selectedExam.id,
         processType,
@@ -122,32 +163,25 @@ export default function ReviewRecheck() {
         currentUser.name
       );
 
-      if (createRectification && processType !== "passed") {
-        try {
-          const rectValues = await rectificationForm.validateFields();
-          const relatedDefect = defectTypes.find((d) => d.id === rectValues.defectTypeId);
-
-          const newTask = {
-            id: `rt${Date.now()}`,
-            title: rectValues.title,
-            relatedExamId: selectedExam.id,
-            relatedExamPatientName: selectedExam.patientName,
-            defectType: relatedDefect?.name || "复核整改",
-            defectTypeId: rectValues.defectTypeId,
-            responsible: rectValues.responsible,
-            responsibleId: `r${Date.now()}`,
-            createdAt: dayjs().format("YYYY-MM-DD"),
-            deadline: rectValues.deadline.format("YYYY-MM-DD"),
-            status: "pending" as const,
-            requirement: rectValues.requirement,
-            remark: values.remark || "",
-          };
-
-          addRectificationTask(newTask);
-          message.success("已处理并创建整改任务");
-        } catch (err) {
-          console.error(err);
-        }
+      if (rectValues) {
+        const relatedDefect = defectTypes.find((d) => d.id === rectValues.defectTypeId);
+        const newTask = {
+          id: `rt${Date.now()}`,
+          title: rectValues.title,
+          relatedExamId: selectedExam.id,
+          relatedExamPatientName: selectedExam.patientName,
+          defectType: relatedDefect?.name || "复核整改",
+          defectTypeId: rectValues.defectTypeId,
+          responsible: rectValues.responsible,
+          responsibleId: `r${Date.now()}`,
+          createdAt: dayjs().format("YYYY-MM-DD"),
+          deadline: rectValues.deadline.format("YYYY-MM-DD"),
+          status: "pending" as const,
+          requirement: rectValues.requirement,
+          remark: values.remark || "",
+        };
+        addRectificationTask(newTask);
+        message.success("已处理并创建整改任务");
       } else {
         const resultText = {
           passed: "复核通过",
@@ -402,13 +436,96 @@ export default function ReviewRecheck() {
     },
   ];
 
+  const commonColumns: ColumnsType<Examination> = [
+    ...pendingColumns.slice(0, 6),
+    {
+      title: "当前阶段",
+      key: "stage",
+      width: 140,
+      render: (_, record) => {
+        if (record.recheckRequested) {
+          const hasReSubmit = record.recheckHistory?.some((h) => h.action === "re_submit");
+          return hasReSubmit ? (
+            <Tag color="orange">重提后待确认</Tag>
+          ) : (
+            <Tag color="warning">待主任处理</Tag>
+          );
+        }
+        if (record.recheckResult === "retake") {
+          return <Tag color="error">已退回重拍</Tag>;
+        }
+        if (record.recheckResult === "supplement") {
+          return <Tag color="warning">已退回补充</Tag>;
+        }
+        if (record.recheckResult === "passed") {
+          return <Tag color="success">最终通过</Tag>;
+        }
+        return <Tag color="default">未知</Tag>;
+      },
+    },
+    {
+      title: "最近操作",
+      key: "latestAction",
+      width: 200,
+      render: (_, record) => {
+        const history = record.recheckHistory || [];
+        if (history.length === 0) return "-";
+        const latest = [...history].sort(
+          (a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()
+        )[0];
+        const config = actionTypeMap[latest.action] || { text: latest.action };
+        return (
+          <div className="text-xs">
+            <div className="flex items-center gap-1">
+              <span className="font-medium">{config.text}</span>
+              {latest.result && (
+                <Tag
+                  color={resultTypeMap[latest.result]?.color || "default"}
+                  style={{ fontSize: 11, margin: 0 }}
+                >
+                  {resultTypeMap[latest.result]?.text || latest.result}
+                </Tag>
+              )}
+            </div>
+            <div className="text-gray-400">{latest.operator} · {latest.time}</div>
+          </div>
+        );
+      },
+    },
+    {
+      title: "操作",
+      key: "action",
+      fixed: "right",
+      width: 150,
+      render: (_, record) => (
+        <Space size="small">
+          <Button
+            type="link"
+            size="small"
+            icon={<Eye size={14} />}
+            onClick={() => openDetail(record)}
+          >
+            详情
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            icon={<FileText size={14} />}
+            onClick={() => navigate(`/quality/${record.id}`)}
+          >
+            质控页
+          </Button>
+        </Space>
+      ),
+    },
+  ];
+
   const stats = {
-    pending: pendingRecheckExams.length,
-    processed: processedExams.length,
-    passed: processedExams.filter((e) => e.recheckResult === "passed").length,
-    retake: processedExams.filter((e) => e.recheckResult === "retake").length,
-    supplement: processedExams.filter((e) => e.recheckResult === "supplement")
-      .length,
+    pending: pendingDirectorExams.length,
+    returned: returnedExams.length,
+    resubmitted: reSubmittedExams.length,
+    passed: finalPassedExams.length,
+    total: allRecheckExams.length,
   };
 
   const renderTimeline = (history: RecheckHistoryItem[]) => {
@@ -477,11 +594,25 @@ export default function ReviewRecheck() {
 
   const tabItems = [
     {
+      key: "overview",
+      label: (
+        <span className="flex items-center gap-2">
+          <Eye size={16} className="text-medical-blue" />
+          全部
+          <Badge
+            count={stats.total}
+            style={{ backgroundColor: "#1890ff" }}
+            size="small"
+          />
+        </span>
+      ),
+    },
+    {
       key: "pending",
       label: (
         <span className="flex items-center gap-2">
           <AlertTriangle size={16} className="text-medical-orange" />
-          待处理
+          待主任处理
           <Badge
             count={stats.pending}
             style={{ backgroundColor: "#faad14" }}
@@ -491,13 +622,41 @@ export default function ReviewRecheck() {
       ),
     },
     {
-      key: "processed",
+      key: "returned",
       label: (
         <span className="flex items-center gap-2">
-          <History size={16} className="text-gray-500" />
-          已处理
+          <XCircle size={16} className="text-medical-red" />
+          已退回待重提
           <Badge
-            count={stats.processed}
+            count={stats.returned}
+            style={{ backgroundColor: "#f5222d" }}
+            size="small"
+          />
+        </span>
+      ),
+    },
+    {
+      key: "resubmitted",
+      label: (
+        <span className="flex items-center gap-2">
+          <RefreshCw size={16} className="text-medical-orange" />
+          重提后待确认
+          <Badge
+            count={stats.resubmitted}
+            style={{ backgroundColor: "#fa8c16" }}
+            size="small"
+          />
+        </span>
+      ),
+    },
+    {
+      key: "passed",
+      label: (
+        <span className="flex items-center gap-2">
+          <CheckCircle2 size={16} className="text-medical-green" />
+          最终通过
+          <Badge
+            count={stats.passed}
             style={{ backgroundColor: "#52c41a" }}
             size="small"
           />
@@ -524,34 +683,52 @@ export default function ReviewRecheck() {
       </div>
 
       <Row gutter={[16, 16]}>
-        <Col xs={12} sm={8} md={6}>
-          <Card className="h-full">
-            <p className="text-sm text-gray-600 mb-2">待复核</p>
+        <Col xs={12} sm={6}>
+          <Card
+            className={`h-full cursor-pointer border-2 transition-all ${activeTab === "pending" ? "border-yellow-400 bg-yellow-50" : "border-transparent"}`}
+            onClick={() => setActiveTab("pending")}
+          >
+            <p className="text-sm text-gray-600 mb-1">待主任处理</p>
             <p className="text-3xl font-bold text-medical-orange">
               {stats.pending}
             </p>
+            <p className="text-xs text-gray-400 mt-1">发起复核等待主任审核</p>
           </Card>
         </Col>
-        <Col xs={12} sm={8} md={6}>
-          <Card className="h-full">
-            <p className="text-sm text-gray-600 mb-2">已通过</p>
+        <Col xs={12} sm={6}>
+          <Card
+            className={`h-full cursor-pointer border-2 transition-all ${activeTab === "returned" ? "border-red-400 bg-red-50" : "border-transparent"}`}
+            onClick={() => setActiveTab("returned")}
+          >
+            <p className="text-sm text-gray-600 mb-1">已退回待重提</p>
+            <p className="text-3xl font-bold text-medical-red">
+              {stats.returned}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">退回后尚未重新提交</p>
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card
+            className={`h-full cursor-pointer border-2 transition-all ${activeTab === "resubmitted" ? "border-orange-400 bg-orange-50" : "border-transparent"}`}
+            onClick={() => setActiveTab("resubmitted")}
+          >
+            <p className="text-sm text-gray-600 mb-1">重提后待确认</p>
+            <p className="text-3xl font-bold text-medical-orange">
+              {stats.resubmitted}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">重新提交后待主任确认</p>
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card
+            className={`h-full cursor-pointer border-2 transition-all ${activeTab === "passed" ? "border-green-400 bg-green-50" : "border-transparent"}`}
+            onClick={() => setActiveTab("passed")}
+          >
+            <p className="text-sm text-gray-600 mb-1">最终通过</p>
             <p className="text-3xl font-bold text-medical-green">
               {stats.passed}
             </p>
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} md={6}>
-          <Card className="h-full">
-            <p className="text-sm text-gray-600 mb-2">退回重拍</p>
-            <p className="text-3xl font-bold text-medical-red">{stats.retake}</p>
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} md={6}>
-          <Card className="h-full">
-            <p className="text-sm text-gray-600 mb-2">补充说明</p>
-            <p className="text-3xl font-bold text-medical-orange">
-              {stats.supplement}
-            </p>
+            <p className="text-xs text-gray-400 mt-1">复核通过的检查</p>
           </Card>
         </Col>
       </Row>
@@ -563,26 +740,36 @@ export default function ReviewRecheck() {
           items={tabItems}
           className="px-4 pt-2"
         />
-        {activeTab === "pending" && pendingRecheckExams.length === 0 ? (
+        {getStageExams.length === 0 ? (
           <div className="text-center py-16">
             <CheckCircle2 size={48} className="text-green-400 mx-auto mb-3" />
-            <p className="text-gray-500 text-lg">暂无待复核的检查</p>
-            <p className="text-gray-400 text-sm mt-1">所有复核任务已处理完毕</p>
+            <p className="text-gray-500 text-lg">
+              {activeTab === "pending"
+                ? "暂无待复核的检查"
+                : activeTab === "returned"
+                ? "暂无已退回待重提的检查"
+                : activeTab === "resubmitted"
+                ? "暂无重提后待确认的检查"
+                : activeTab === "passed"
+                ? "暂无最终通过的检查"
+                : "暂无复核记录"}
+            </p>
           </div>
         ) : (
           <Table
             columns={
-              activeTab === "pending" ? pendingColumns : processedColumns
+              activeTab === "pending"
+                ? pendingColumns
+                : activeTab === "passed"
+                ? processedColumns
+                : commonColumns
             }
-            dataSource={displayExams}
+            dataSource={getStageExams}
             rowKey="id"
             scroll={{ x: 1400 }}
             pagination={{
               showSizeChanger: true,
-              showTotal: (total) =>
-                `共 ${total} 条${
-                  activeTab === "pending" ? "待复核" : "已处理"
-                }`,
+              showTotal: (total) => `共 ${total} 条`,
             }}
           />
         )}

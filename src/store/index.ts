@@ -363,3 +363,58 @@ export const getRectificationStatusColor = (
   };
   return (map[status] as any) || "default";
 };
+
+export interface PositionMissingInfo {
+  ruleKey: string;
+  ruleName: string;
+  missing: string[];
+}
+
+export const getPositionMissing = (
+  exam: Examination,
+  positionRules: PositionRules
+): PositionMissingInfo[] => {
+  const results: PositionMissingInfo[] = [];
+  const bodyParts = exam.bodyParts || [];
+  const markers = exam.markers || { left: false, right: false };
+
+  if (positionRules.ccLeftRequired && !bodyParts.includes("CC-L")) {
+    results.push({ ruleKey: "ccLeftRequired", ruleName: "CC位（左）", missing: ["CC左"] });
+  }
+  if (positionRules.ccRightRequired && !bodyParts.includes("CC-R")) {
+    results.push({ ruleKey: "ccRightRequired", ruleName: "CC位（右）", missing: ["CC右"] });
+  }
+  if (positionRules.mloLeftRequired && !bodyParts.includes("MLO-L")) {
+    results.push({ ruleKey: "mloLeftRequired", ruleName: "MLO位（左）", missing: ["MLO左"] });
+  }
+  if (positionRules.mloRightRequired && !bodyParts.includes("MLO-R")) {
+    results.push({ ruleKey: "mloRightRequired", ruleName: "MLO位（右）", missing: ["MLO右"] });
+  }
+  if (positionRules.leftMarkerRequired && !markers.left) {
+    results.push({ ruleKey: "leftMarkerRequired", ruleName: "左侧标识 (L)", missing: ["L标识"] });
+  }
+  if (positionRules.rightMarkerRequired && !markers.right) {
+    results.push({ ruleKey: "rightMarkerRequired", ruleName: "右侧标识 (R)", missing: ["R标识"] });
+  }
+
+  if (positionRules.ccMloPairRequired) {
+    const hasCCLeft = bodyParts.includes("CC-L");
+    const hasCCRight = bodyParts.includes("CC-R");
+    const hasMLOLeft = bodyParts.includes("MLO-L");
+    const hasMLORight = bodyParts.includes("MLO-R");
+    const pairMissing: string[] = [];
+
+    if (hasCCLeft && !hasMLOLeft) pairMissing.push("左侧：缺MLO");
+    if (!hasCCLeft && hasMLOLeft) pairMissing.push("左侧：缺CC");
+    if (!hasCCLeft && !hasMLOLeft) pairMissing.push("左侧：CC和MLO都缺");
+    if (hasCCRight && !hasMLORight) pairMissing.push("右侧：缺MLO");
+    if (!hasCCRight && hasMLORight) pairMissing.push("右侧：缺CC");
+    if (!hasCCRight && !hasMLORight) pairMissing.push("右侧：CC和MLO都缺");
+
+    if (pairMissing.length > 0) {
+      results.push({ ruleKey: "ccMloPairRequired", ruleName: "CC/MLO成套", missing: pairMissing });
+    }
+  }
+
+  return results;
+};

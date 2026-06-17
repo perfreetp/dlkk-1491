@@ -1,4 +1,4 @@
-import { Card, Row, Col, Statistic, List, Tag, Progress, Button } from "antd";
+import { Card, Row, Col, Statistic, List, Tag, Progress, Button, Alert } from "antd";
 import {
   Activity,
   CheckCircle2,
@@ -9,6 +9,9 @@ import {
   TrendingUp,
   ArrowRight,
   Calendar,
+  ShieldAlert,
+  User,
+  AlertCircle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import ReactECharts from "echarts-for-react";
@@ -98,6 +101,8 @@ export default function Dashboard() {
           statusColor: isOverdue ? "error" : getRectificationStatusColor(t.status),
           isOverdue,
           responsible: t.responsible,
+          relatedExamId: t.relatedExamId,
+          relatedExamPatientName: t.relatedExamPatientName,
         };
       }),
   ].slice(0, 6);
@@ -348,8 +353,11 @@ export default function Dashboard() {
                         </span>
                       </div>
                       {item.responsible && (
-                        <div className="text-xs text-gray-400 mt-1 pl-6">
-                          责任人：{item.responsible}
+                        <div className="text-xs text-gray-400 mt-1 pl-6 flex items-center gap-3">
+                          <span>责任人：{item.responsible}</span>
+                          {item.type === "rectification" && item.relatedExamPatientName && (
+                            <span>关联检查：{item.relatedExamPatientName}</span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -449,6 +457,160 @@ export default function Dashboard() {
           </Card>
         </Col>
       </Row>
+
+      {(() => {
+        const riskItems: {
+          type: "retake" | "overdue" | "repeat";
+          level: "high" | "medium";
+          title: string;
+          detail: string;
+          action?: string;
+          onClick?: () => void;
+        }[] = [];
+
+        const recentRetakeExams = examinations.filter((e) => {
+          if (!e.recheckHistory || e.recheckHistory.length === 0) return false;
+          const retakeActions = e.recheckHistory.filter(
+            (h) => h.action === "process" && h.result === "retake"
+          );
+          return retakeActions.length >= 2;
+        });
+        recentRetakeExams.forEach((exam) => {
+          const retakeCount = exam.recheckHistory!.filter(
+            (h) => h.action === "process" && h.result === "retake"
+          ).length;
+          riskItems.push({
+            type: "retake",
+            level: "high",
+            title: `${exam.patientName} 多次退回重拍`,
+            detail: `已退回重拍${retakeCount}次，技师：${exam.technician}`,
+            action: "查看详情",
+            onClick: () => navigate(`/quality/${exam.id}`),
+          });
+        });
+
+        const overdueTasks = rectificationTasks.filter(
+          (t) => t.status !== "completed" && dayjs(t.deadline).isBefore(dayjs())
+        );
+        overdueTasks.forEach((task) => {
+          const overdueDays = dayjs().diff(dayjs(task.deadline), "day");
+          riskItems.push({
+            type: "overdue",
+            level: overdueDays >= 7 ? "high" : "medium",
+            title: `整改逾期：${task.title}`,
+            detail: `责任人：${task.responsible}，已逾期${overdueDays}天`,
+            action: "查看整改",
+            onClick: () => navigate(`/review/rectification?highlight=${task.id}`),
+          });
+        });
+
+        const technicianDefectMap: Record<string, Record<string, number>> = {};
+        examinations.forEach((exam) => {
+          if (!exam.technician || exam.defects.length === 0) return;
+          if (!technicianDefectMap[exam.technician]) {
+            technicianDefectMap[exam.technician] = {};
+          }
+          exam.defects.forEach((defectId) => {
+            technicianDefectMap[exam.technician][defectId] =
+              (technicianDefectMap[exam.technician][defectId] || 0) + 1;
+          });
+        });
+        Object.entries(technicianDefectMap).forEach(([techName, defects]) => {
+          Object.entries(defects).forEach(([defectId, count]) => {
+            if (count >= 3) {
+              const defect = defectTypes.find((d) => d.id === defectId);
+              riskItems.push({
+                type: "repeat",
+                level: count >= 5 ? "high" : "medium",
+                title: `${techName} 重复出现同类缺陷`,
+                detail: `${defect?.name || defectId} 出现${count}次`,
+                action: "查看技师",
+                onClick: () => navigate("/review/statistics"),
+              });
+            }
+          });
+        });
+
+        if (riskItems.length === 0) return null;
+
+        const highRiskCount = riskItems.filter((r) => r.level === "high").length;
+
+        return (
+          <Card
+            title={
+              <div className="flex items-center gap-2">
+                <ShieldAlert size={18} className="text-medical-red" />
+                <span className="font-medium">质控风险提醒</span>
+                {highRiskCount > 0 && (
+                  <Tag color="error">{highRiskCount} 项高风险</Tag>
+                )}
+              </div>
+            }
+            extra={
+              <span className="text-xs text-gray-400">
+                供早会前快速浏览重点问题
+              </span>
+            }
+          >
+            <div className="space-y-3">
+              {riskItems.slice(0, 8).map((item, idx) => (
+                <div
+                  key={idx}
+                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:bg-gray-50 ${
+                    item.level === "high"
+                      ? "bg-red-50 border-red-200"
+                      : "bg-yellow-50 border-yellow-200"
+                  }`}
+                  onClick={item.onClick}
+                >
+                  <div
+                    className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${
+                      item.type === "retake"
+                        ? "bg-red-100 text-medical-red"
+                        : item.type === "overdue"
+                        ? "bg-orange-100 text-medical-orange"
+                        : "bg-yellow-100 text-yellow-600"
+                    }`}
+                  >
+                    {item.type === "retake" ? (
+                      <XCircle size={14} />
+                    ) : item.type === "overdue" ? (
+                      <Clock size={14} />
+                    ) : (
+                      <AlertCircle size={14} />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-800">
+                        {item.title}
+                      </span>
+                      {item.level === "high" && (
+                        <Tag color="error" style={{ margin: 0, fontSize: 11 }}>
+                          高风险
+                        </Tag>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {item.detail}
+                    </p>
+                  </div>
+                  {item.action && (
+                    <Button type="link" size="small" className="flex-shrink-0">
+                      {item.action} <ArrowRight size={12} className="inline" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {riskItems.length > 8 && (
+                <div className="text-center text-sm text-gray-400 pt-2">
+                  还有 {riskItems.length - 8} 项风险提示，点击查看全部
+                </div>
+              )}
+            </div>
+          </Card>
+        );
+      })()}
     </div>
   );
 }
