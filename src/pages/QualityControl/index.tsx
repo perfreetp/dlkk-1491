@@ -51,6 +51,7 @@ export default function QualityControl() {
     examinations,
     defectTypes,
     scoreItems,
+    positionRules,
     updateExamination,
     getExamById,
     currentUser,
@@ -156,12 +157,23 @@ export default function QualityControl() {
     if (!currentExam) return;
 
     let newStatus: Examination["status"] = currentExam.status;
+    let finalRecheckRequested = recheckRequested;
+    let finalRechecker = rechecker;
+    let finalRecheckOpinion = recheckOpinion;
+
     if (submitType === "pass") {
       newStatus = recheckRequested ? "rechecking" : "qc_passed";
     } else if (submitType === "fail") {
       newStatus = needRetake ? "retake" : "qc_failed";
     } else if (submitType === "recheck") {
       newStatus = "rechecking";
+      finalRecheckRequested = true;
+      if (!finalRechecker) {
+        finalRechecker = currentUser.name;
+      }
+      if (!finalRecheckOpinion) {
+        finalRecheckOpinion = "质控员发起二次复核，请上级质控人员审核";
+      }
     }
 
     updateExamination(currentExam.id, {
@@ -171,9 +183,9 @@ export default function QualityControl() {
       retakeType: needRetake ? retakeType : undefined,
       retakeReason: needRetake ? retakeReason : undefined,
       score: totalScore,
-      recheckRequested,
-      recheckOpinion,
-      rechecker: recheckRequested ? (rechecker || currentUser.name) : undefined,
+      recheckRequested: finalRecheckRequested,
+      recheckOpinion: finalRecheckOpinion,
+      rechecker: finalRecheckRequested ? finalRechecker : undefined,
       remark,
     });
 
@@ -306,7 +318,7 @@ export default function QualityControl() {
       {currentStep === 0 && (
         <Card title="体位与标识自动核对" extra={<Tag color="blue">系统自动检测</Tag>}>
           <Alert
-            message="系统已自动完成体位与标识初步核对，如有误判请手动调整"
+            message="系统已自动完成体位与标识初步核对，如有误判请手动调整。可在规则设置中临时关闭某项检查。"
             type="info"
             showIcon
             className="mb-4"
@@ -319,22 +331,28 @@ export default function QualityControl() {
                 </h3>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { key: "ccLeft", label: "CC位（左）" },
-                    { key: "ccRight", label: "CC位（右）" },
-                    { key: "mloLeft", label: "MLO位（左）" },
-                    { key: "mloRight", label: "MLO位（右）" },
+                    { key: "ccLeft", label: "CC位（左）", ruleKey: "ccLeftRequired" as const },
+                    { key: "ccRight", label: "CC位（右）", ruleKey: "ccRightRequired" as const },
+                    { key: "mloLeft", label: "MLO位（左）", ruleKey: "mloLeftRequired" as const },
+                    { key: "mloRight", label: "MLO位（右）", ruleKey: "mloRightRequired" as const },
                   ].map((item) => {
+                    const ruleEnabled = positionRules[item.ruleKey];
                     const ok = currentExam.positions[item.key as keyof typeof currentExam.positions];
+                    const showMissing = ruleEnabled && !ok;
                     return (
                       <div
                         key={item.key}
                         className={`flex items-center gap-2 p-3 rounded-lg border-2 transition-all ${
-                          ok
+                          !ruleEnabled
+                            ? "border-gray-200 bg-gray-100 opacity-60"
+                            : ok
                             ? "border-green-200 bg-green-50"
                             : "border-red-200 bg-red-50 animate-pulse"
                         }`}
                       >
-                        {ok ? (
+                        {!ruleEnabled ? (
+                          <span className="text-gray-400 text-xs">已关闭</span>
+                        ) : ok ? (
                           <CheckCircle2 size={20} className="text-medical-green" />
                         ) : (
                           <XCircle size={20} className="text-medical-red" />
@@ -342,30 +360,48 @@ export default function QualityControl() {
                         <div>
                           <p
                             className={`text-sm font-medium ${
-                              ok ? "text-gray-800" : "text-medical-red"
+                              !ruleEnabled
+                                ? "text-gray-400"
+                                : ok
+                                ? "text-gray-800"
+                                : "text-medical-red"
                             }`}
                           >
                             {item.label}
                           </p>
                           <p className="text-xs text-gray-500">
-                            {ok ? "已拍摄" : "缺失，请确认"}
+                            {!ruleEnabled ? "规则已关闭" : ok ? "已拍摄" : "缺失，请确认"}
                           </p>
                         </div>
                       </div>
                     );
                   })}
                 </div>
-                {(!currentExam.positions.ccLeft ||
-                  !currentExam.positions.ccRight ||
-                  !currentExam.positions.mloLeft ||
-                  !currentExam.positions.mloRight) && (
-                  <Alert
-                    message="存在体位缺失，建议标记为重拍"
-                    type="error"
-                    showIcon
-                    className="mt-4"
-                  />
-                )}
+                {positionRules.ccLeftRequired &&
+                  positionRules.ccRightRequired &&
+                  positionRules.mloLeftRequired &&
+                  positionRules.mloRightRequired &&
+                  (!currentExam.positions.ccLeft ||
+                    !currentExam.positions.ccRight ||
+                    !currentExam.positions.mloLeft ||
+                    !currentExam.positions.mloRight) && (
+                    <Alert
+                      message="存在体位缺失，建议标记为重拍"
+                      type="error"
+                      showIcon
+                      className="mt-4"
+                    />
+                  )}
+                {positionRules.ccMloPairRequired &&
+                  (currentExam.positions.ccLeft !== currentExam.positions.mloLeft ||
+                    currentExam.positions.ccRight !== currentExam.positions.mloRight) && (
+                    <Alert
+                      message="CC与MLO体位不成套，请注意检查"
+                      type="warning"
+                      showIcon
+                      className="mt-4"
+                    />
+                  )}
               </div>
             </Col>
             <Col xs={24} md={12}>
@@ -375,45 +411,59 @@ export default function QualityControl() {
                 </h3>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { key: "left", label: "左侧标识 (L)", present: currentExam.leftMarkerPresent },
-                    { key: "right", label: "右侧标识 (R)", present: currentExam.rightMarkerPresent },
-                  ].map((item) => (
-                    <div
-                      key={item.key}
-                      className={`flex items-center gap-2 p-3 rounded-lg border-2 transition-all ${
-                        item.present
-                          ? "border-green-200 bg-green-50"
-                          : "border-red-200 bg-red-50 animate-pulse"
-                      }`}
-                    >
-                      {item.present ? (
-                        <CheckCircle2 size={20} className="text-medical-green" />
-                      ) : (
-                        <XCircle size={20} className="text-medical-red" />
-                      )}
-                      <div>
-                        <p
-                          className={`text-sm font-medium ${
-                            item.present ? "text-gray-800" : "text-medical-red"
-                          }`}
-                        >
-                          {item.label}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {item.present ? "标识正确" : "标识缺失或错误"}
-                        </p>
+                    { key: "left", label: "左侧标识 (L)", present: currentExam.leftMarkerPresent, ruleKey: "leftMarkerRequired" as const },
+                    { key: "right", label: "右侧标识 (R)", present: currentExam.rightMarkerPresent, ruleKey: "rightMarkerRequired" as const },
+                  ].map((item) => {
+                    const ruleEnabled = positionRules[item.ruleKey];
+                    const showMissing = ruleEnabled && !item.present;
+                    return (
+                      <div
+                        key={item.key}
+                        className={`flex items-center gap-2 p-3 rounded-lg border-2 transition-all ${
+                          !ruleEnabled
+                            ? "border-gray-200 bg-gray-100 opacity-60"
+                            : item.present
+                            ? "border-green-200 bg-green-50"
+                            : "border-red-200 bg-red-50 animate-pulse"
+                        }`}
+                      >
+                        {!ruleEnabled ? (
+                          <span className="text-gray-400 text-xs">已关闭</span>
+                        ) : item.present ? (
+                          <CheckCircle2 size={20} className="text-medical-green" />
+                        ) : (
+                          <XCircle size={20} className="text-medical-red" />
+                        )}
+                        <div>
+                          <p
+                            className={`text-sm font-medium ${
+                              !ruleEnabled
+                                ? "text-gray-400"
+                                : item.present
+                                ? "text-gray-800"
+                                : "text-medical-red"
+                            }`}
+                          >
+                            {item.label}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {!ruleEnabled ? "规则已关闭" : item.present ? "标识正确" : "标识缺失或错误"}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
-                {(!currentExam.leftMarkerPresent || !currentExam.rightMarkerPresent) && (
-                  <Alert
-                    message="左右侧标识存在问题，必须在缺陷标记中记录"
-                    type="warning"
-                    showIcon
-                    className="mt-4"
-                  />
-                )}
+                {positionRules.leftMarkerRequired &&
+                  positionRules.rightMarkerRequired &&
+                  (!currentExam.leftMarkerPresent || !currentExam.rightMarkerPresent) && (
+                    <Alert
+                      message="左右侧标识存在问题，必须在缺陷标记中记录"
+                      type="warning"
+                      showIcon
+                      className="mt-4"
+                    />
+                  )}
               </div>
             </Col>
           </Row>

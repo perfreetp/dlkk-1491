@@ -43,7 +43,7 @@ const severityMap: Record<DefectSeverity, { text: string; color: string }> = {
 };
 
 export default function SettingsRules() {
-  const { defectTypes, scoreItems, updateDefectType, addDefectType, updateScoreItem, addScoreItem } = useQCStore();
+  const { defectTypes, scoreItems, positionRules, updateDefectType, addDefectType, updateScoreItem, addScoreItem, updatePositionRules } = useQCStore();
   const [activeTab, setActiveTab] = useState("positions");
   const [defectModalVisible, setDefectModalVisible] = useState(false);
   const [scoreModalVisible, setScoreModalVisible] = useState(false);
@@ -51,6 +51,11 @@ export default function SettingsRules() {
   const [editingScore, setEditingScore] = useState<ScoreItem | null>(null);
   const [defectForm] = Form.useForm();
   const [scoreForm] = Form.useForm();
+
+  const handlePositionRuleChange = (key: keyof typeof positionRules, value: boolean) => {
+    updatePositionRules({ [key]: value } as Partial<typeof positionRules>);
+    message.success("规则设置已更新");
+  };
 
   const openDefectModal = (defect?: DefectType) => {
     setEditingDefect(defect || null);
@@ -110,16 +115,15 @@ export default function SettingsRules() {
     }
   };
 
-  const positionRules = [
-    { id: "rule1", name: "CC体位左右齐全", description: "需同时拍摄左侧CC和右侧CC体位图像", enabled: true, enforce: "必须" },
-    { id: "rule2", name: "MLO体位左右齐全", description: "需同时拍摄左侧MLO和右侧MLO体位图像", enabled: true, enforce: "必须" },
-    { id: "rule3", name: "左右侧标识检查", description: "每幅图像必须包含清晰可见的左右侧标识(L/R)", enabled: true, enforce: "必须" },
-    { id: "rule4", name: "CC/MLO成套检查", description: "每位患者需完成CC和MLO两种体位成套拍摄", enabled: true, enforce: "必须" },
+  const positionRuleList = [
+    { key: "ccLeftRequired", name: "CC位（左）", description: "检查左侧CC体位是否拍摄", group: "体位完整性" },
+    { key: "ccRightRequired", name: "CC位（右）", description: "检查右侧CC体位是否拍摄", group: "体位完整性" },
+    { key: "mloLeftRequired", name: "MLO位（左）", description: "检查左侧MLO体位是否拍摄", group: "体位完整性" },
+    { key: "mloRightRequired", name: "MLO位（右）", description: "检查右侧MLO体位是否拍摄", group: "体位完整性" },
+    { key: "leftMarkerRequired", name: "左侧标识 (L)", description: "检查左侧图像L标识是否存在", group: "标识检查" },
+    { key: "rightMarkerRequired", name: "右侧标识 (R)", description: "检查右侧图像R标识是否存在", group: "标识检查" },
+    { key: "ccMloPairRequired", name: "CC/MLO成套", description: "检查每位患者CC和MLO是否成套拍摄", group: "成套检查" },
   ];
-
-  const [positionRulesState, setPositionRulesState] = useState<Record<string, boolean>>(
-    Object.fromEntries(positionRules.map((r) => [r.id, r.enabled]))
-  );
 
   const defectColumns: ColumnsType<DefectType> = [
     {
@@ -244,34 +248,53 @@ export default function SettingsRules() {
                 </span>
               ),
               children: (
-                <div className="p-6 space-y-4">
+                <div className="p-6 space-y-6">
                   <div>
                     <h3 className="font-medium text-gray-800">体位拍摄要求</h3>
-                    <p className="text-sm text-gray-500 mt-1">设置乳腺DR拍摄的基本体位规则</p>
+                    <p className="text-sm text-gray-500 mt-1">
+                      关闭某项规则后，图像质控页将不再提示对应缺失项
+                    </p>
                   </div>
-                  <Row gutter={[16, 16]}>
-                    {positionRules.map((rule) => (
-                      <Col xs={24} md={12} key={rule.id}>
-                        <Card size="small" className="h-full" styles={{ body: { padding: 16 } }}>
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium text-gray-800">{rule.name}</span>
-                                <Tag color="red">{rule.enforce}</Tag>
-                              </div>
-                              <p className="text-sm text-gray-500 mt-1">{rule.description}</p>
-                            </div>
-                            <Switch
-                              checked={positionRulesState[rule.id]}
-                              onChange={(checked) =>
-                                setPositionRulesState({ ...positionRulesState, [rule.id]: checked })
-                              }
-                            />
-                          </div>
-                        </Card>
-                      </Col>
-                    ))}
-                  </Row>
+                  {["体位完整性", "标识检查", "成套检查"].map((group) => (
+                    <div key={group}>
+                      <h4 className="text-sm font-medium text-gray-600 mb-3 flex items-center gap-2">
+                        <span className="w-1 h-4 bg-medical-blue rounded" />
+                        {group}
+                      </h4>
+                      <Row gutter={[16, 16]}>
+                        {positionRuleList
+                          .filter((r) => r.group === group)
+                          .map((rule) => (
+                            <Col xs={24} md={12} lg={8} key={rule.key}>
+                              <Card size="small" className="h-full" styles={{ body: { padding: 14 } }}>
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <span className="font-medium text-gray-800 text-sm">
+                                      {rule.name}
+                                    </span>
+                                    <p className="text-xs text-gray-500 mt-1">{rule.description}</p>
+                                  </div>
+                                  <Switch
+                                    size="small"
+                                    checked={
+                                      positionRules[
+                                        rule.key as keyof typeof positionRules
+                                      ]
+                                    }
+                                    onChange={(checked) =>
+                                      handlePositionRuleChange(
+                                        rule.key as keyof typeof positionRules,
+                                        checked
+                                      )
+                                    }
+                                  />
+                                </div>
+                              </Card>
+                            </Col>
+                          ))}
+                      </Row>
+                    </div>
+                  ))}
                 </div>
               ),
             },

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type {
   Examination,
   DefectType,
@@ -10,6 +11,7 @@ import type {
   TrendDataPoint,
   User,
   NotificationSettings,
+  RectificationStatus,
 } from "@/types";
 import {
   mockExaminations,
@@ -41,6 +43,16 @@ export interface Room {
   lastMaintenance: string;
 }
 
+export interface PositionRules {
+  ccLeftRequired: boolean;
+  ccRightRequired: boolean;
+  mloLeftRequired: boolean;
+  mloRightRequired: boolean;
+  leftMarkerRequired: boolean;
+  rightMarkerRequired: boolean;
+  ccMloPairRequired: boolean;
+}
+
 const initialStaff: StaffMember[] = [
   { id: "t1", name: "张技师", role: "technician", roleName: "技师", room: "DR机房1", phone: "13800138001", status: "active" },
   { id: "t2", name: "李技师", role: "technician", roleName: "技师", room: "DR机房2", phone: "13800138002", status: "active" },
@@ -57,6 +69,16 @@ const initialRooms: Room[] = [
   { id: "r3", name: "DR机房3", equipment: "Siemens Mammomat Inspiration", status: "maintenance", lastMaintenance: "2024-04-20" },
 ];
 
+const initialPositionRules: PositionRules = {
+  ccLeftRequired: true,
+  ccRightRequired: true,
+  mloLeftRequired: true,
+  mloRightRequired: true,
+  leftMarkerRequired: true,
+  rightMarkerRequired: true,
+  ccMloPairRequired: true,
+};
+
 interface QCStore {
   examinations: Examination[];
   defectTypes: DefectType[];
@@ -71,6 +93,7 @@ interface QCStore {
   selectedExam: Examination | null;
   staff: StaffMember[];
   rooms: Room[];
+  positionRules: PositionRules;
 
   setSelectedExam: (exam: Examination | null) => void;
   updateExamination: (id: string, data: Partial<Examination>) => void;
@@ -87,112 +110,138 @@ interface QCStore {
   updateStaff: (id: string, data: Partial<StaffMember>) => void;
   addRoom: (room: Room) => void;
   updateRoom: (id: string, data: Partial<Room>) => void;
+  updatePositionRules: (rules: Partial<PositionRules>) => void;
 }
 
-export const useQCStore = create<QCStore>((set, get) => ({
-  examinations: mockExaminations,
-  defectTypes,
-  technicianStats: mockTechnicianStats,
-  roomStats: mockRoomStats,
-  rectificationTasks: mockRectificationTasks,
-  caseStudies: mockCaseStudies,
-  scoreItems: mockScoreItems,
-  trendData: mockTrendData,
-  currentUser: mockCurrentUser,
-  notificationSettings: {
-    retakeAlert: true,
-    recheckNotify: true,
-    rectificationReminder: true,
-    dailyReport: true,
-    notifyMethod: ["site"],
-  },
-  selectedExam: null,
-  staff: initialStaff,
-  rooms: initialRooms,
+export const useQCStore = create<QCStore>()(
+  persist(
+    (set, get) => ({
+      examinations: mockExaminations,
+      defectTypes,
+      technicianStats: mockTechnicianStats,
+      roomStats: mockRoomStats,
+      rectificationTasks: mockRectificationTasks,
+      caseStudies: mockCaseStudies,
+      scoreItems: mockScoreItems,
+      trendData: mockTrendData,
+      currentUser: mockCurrentUser,
+      notificationSettings: {
+        retakeAlert: true,
+        recheckNotify: true,
+        rectificationReminder: true,
+        dailyReport: true,
+        notifyMethod: ["site"],
+      },
+      selectedExam: null,
+      staff: initialStaff,
+      rooms: initialRooms,
+      positionRules: initialPositionRules,
 
-  setSelectedExam: (exam) => set({ selectedExam: exam }),
+      setSelectedExam: (exam) => set({ selectedExam: exam }),
 
-  updateExamination: (id, data) =>
-    set((state) => ({
-      examinations: state.examinations.map((e) =>
-        e.id === id ? { ...e, ...data } : e
-      ),
-    })),
+      updateExamination: (id, data) =>
+        set((state) => ({
+          examinations: state.examinations.map((e) =>
+            e.id === id ? { ...e, ...data } : e
+          ),
+        })),
 
-  addRectificationTask: (task) =>
-    set((state) => ({
-      rectificationTasks: [...state.rectificationTasks, task],
-    })),
+      addRectificationTask: (task) =>
+        set((state) => ({
+          rectificationTasks: [...state.rectificationTasks, task],
+        })),
 
-  updateRectificationTask: (id, data) =>
-    set((state) => ({
-      rectificationTasks: state.rectificationTasks.map((t) =>
-        t.id === id ? { ...t, ...data } : t
-      ),
-    })),
+      updateRectificationTask: (id, data) =>
+        set((state) => ({
+          rectificationTasks: state.rectificationTasks.map((t) =>
+            t.id === id ? { ...t, ...data } : t
+          ),
+        })),
 
-  addCaseStudy: (caseStudy) =>
-    set((state) => ({
-      caseStudies: [...state.caseStudies, caseStudy],
-    })),
+      addCaseStudy: (caseStudy) =>
+        set((state) => ({
+          caseStudies: [...state.caseStudies, caseStudy],
+        })),
 
-  getExamById: (id) => {
-    return get().examinations.find((e) => e.id === id);
-  },
+      getExamById: (id) => {
+        return get().examinations.find((e) => e.id === id);
+      },
 
-  updateNotificationSettings: (settings) =>
-    set((state) => ({
-      notificationSettings: { ...state.notificationSettings, ...settings },
-    })),
+      updateNotificationSettings: (settings) =>
+        set((state) => ({
+          notificationSettings: { ...state.notificationSettings, ...settings },
+        })),
 
-  updateDefectType: (id, data) =>
-    set((state) => ({
-      defectTypes: state.defectTypes.map((d) =>
-        d.id === id ? { ...d, ...data } : d
-      ),
-    })),
+      updateDefectType: (id, data) =>
+        set((state) => ({
+          defectTypes: state.defectTypes.map((d) =>
+            d.id === id ? { ...d, ...data } : d
+          ),
+        })),
 
-  addDefectType: (defect) =>
-    set((state) => ({
-      defectTypes: [...state.defectTypes, defect],
-    })),
+      addDefectType: (defect) =>
+        set((state) => ({
+          defectTypes: [...state.defectTypes, defect],
+        })),
 
-  updateScoreItem: (id, data) =>
-    set((state) => ({
-      scoreItems: state.scoreItems.map((s) =>
-        s.id === id ? { ...s, ...data } : s
-      ),
-    })),
+      updateScoreItem: (id, data) =>
+        set((state) => ({
+          scoreItems: state.scoreItems.map((s) =>
+            s.id === id ? { ...s, ...data } : s
+          ),
+        })),
 
-  addScoreItem: (item) =>
-    set((state) => ({
-      scoreItems: [...state.scoreItems, item],
-    })),
+      addScoreItem: (item) =>
+        set((state) => ({
+          scoreItems: [...state.scoreItems, item],
+        })),
 
-  addStaff: (member) =>
-    set((state) => ({
-      staff: [...state.staff, member],
-    })),
+      addStaff: (member) =>
+        set((state) => ({
+          staff: [...state.staff, member],
+        })),
 
-  updateStaff: (id, data) =>
-    set((state) => ({
-      staff: state.staff.map((s) =>
-        s.id === id ? { ...s, ...data } : s
-      ),
-    })),
+      updateStaff: (id, data) =>
+        set((state) => ({
+          staff: state.staff.map((s) =>
+            s.id === id ? { ...s, ...data } : s
+          ),
+        })),
 
-  addRoom: (room) =>
-    set((state) => ({
-      rooms: [...state.rooms, room],
-    })),
+      addRoom: (room) =>
+        set((state) => ({
+          rooms: [...state.rooms, room],
+        })),
 
-  updateRoom: (id, data) =>
-    set((state) => ({
-      rooms: state.rooms.map((r) =>
-        r.id === id ? { ...r, ...data } : r
-      ),
-    })),
-}));
+      updateRoom: (id, data) =>
+        set((state) => ({
+          rooms: state.rooms.map((r) =>
+            r.id === id ? { ...r, ...data } : r
+          ),
+        })),
+
+      updatePositionRules: (rules) =>
+        set((state) => ({
+          positionRules: { ...state.positionRules, ...rules },
+        })),
+    }),
+    {
+      name: "qc-workbench-storage",
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        examinations: state.examinations,
+        defectTypes: state.defectTypes,
+        rectificationTasks: state.rectificationTasks,
+        caseStudies: state.caseStudies,
+        scoreItems: state.scoreItems,
+        notificationSettings: state.notificationSettings,
+        staff: state.staff,
+        rooms: state.rooms,
+        positionRules: state.positionRules,
+      }),
+    }
+  )
+);
 
 export const getStatusText = (status: Examination["status"]): string => {
   const map: Record<Examination["status"], string> = {
@@ -228,4 +277,24 @@ export const getStatusColor = (
 export const getDefectName = (defectId: string, defectTypes: DefectType[]): string => {
   const def = defectTypes.find((d) => d.id === defectId);
   return def ? def.name : defectId;
+};
+
+export const getRectificationStatusText = (status: string): string => {
+  const map: Record<string, string> = {
+    pending: "待整改",
+    in_progress: "整改中",
+    completed: "已完成",
+  };
+  return map[status] || status;
+};
+
+export const getRectificationStatusColor = (
+  status: string
+): "default" | "processing" | "success" | "error" | "warning" => {
+  const map: Record<string, "default" | "processing" | "success" | "error" | "warning"> = {
+    pending: "warning",
+    in_progress: "processing",
+    completed: "success",
+  };
+  return (map[status] as any) || "default";
 };

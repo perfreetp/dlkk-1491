@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import ReactECharts from "echarts-for-react";
-import { useQCStore, getStatusText, getStatusColor } from "@/store";
+import { useQCStore, getStatusText, getStatusColor, getRectificationStatusText, getRectificationStatusColor } from "@/store";
 import dayjs from "dayjs";
 
 export default function Dashboard() {
@@ -66,6 +66,8 @@ export default function Dashboard() {
         title: `待质控 - ${e.patientName}`,
         time: e.examTime,
         status: e.status,
+        statusText: getStatusText(e.status),
+        statusColor: getStatusColor(e.status),
       })),
     ...examinations
       .filter((e) => e.status === "rechecking")
@@ -76,17 +78,25 @@ export default function Dashboard() {
         title: `复核中 - ${e.patientName}`,
         time: e.examTime,
         status: e.status,
+        statusText: getStatusText(e.status),
+        statusColor: getStatusColor(e.status),
       })),
     ...rectificationTasks
       .filter((t) => t.status !== "completed")
       .slice(0, 2)
-      .map((t) => ({
-        type: "rectification" as const,
-        id: t.id,
-        title: `整改任务 - ${t.title}`,
-        time: t.deadline,
-        status: t.status,
-      })),
+      .map((t) => {
+        const isOverdue = t.status !== "completed" && dayjs(t.deadline).isBefore(dayjs());
+        return {
+          type: "rectification" as const,
+          id: t.id,
+          title: `整改 - ${t.title}`,
+          time: t.deadline,
+          status: t.status,
+          statusText: isOverdue ? "已逾期" : getRectificationStatusText(t.status),
+          statusColor: isOverdue ? "error" : getRectificationStatusColor(t.status),
+          isOverdue,
+        };
+      }),
   ].slice(0, 6);
 
   const trendOption = {
@@ -323,17 +333,19 @@ export default function Dashboard() {
                         size={14}
                         className={
                           item.type === "rectification"
-                            ? "text-medical-orange"
+                            ? item.isOverdue
+                              ? "text-medical-red"
+                              : "text-medical-orange"
                             : "text-medical-blue"
                         }
                       />
                       <span className="text-sm text-gray-700">{item.title}</span>
                     </div>
                     <Tag
-                      color={getStatusColor(item.status as any)}
+                      color={item.statusColor as any}
                       style={{ margin: 0 }}
                     >
-                      {getStatusText(item.status as any)}
+                      {item.statusText}
                     </Tag>
                   </div>
                 </List.Item>
